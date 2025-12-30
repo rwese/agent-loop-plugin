@@ -35,7 +35,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/open-code-ai/oh-my-opencode"
+    "url": "https://codeberg.org/nope-at/oc-agent-loop.git"
   },
   "lint-staged": {
     "*.{ts,js,json,md}": "prettier --write"
