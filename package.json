@@ -1,0 +1,43 @@
+{
+  "name": "agent-loop",
+  "version": "1.0.0",
+  "description": "Standalone agent loop mechanisms extracted from oh-my-opencode",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "keywords": [
+    "opencode",
+    "agent",
+    "loop",
+    "automation",
+    "todo",
+    "continuation"
+  ],
+  "author": "OpenCode Community",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.4",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/open-code-ai/oh-my-opencode"
+  },
+  "lint-staged": {
+    "*.{ts,js,json,md}": "prettier --write"
+  }
+}
