@@ -65,6 +65,8 @@ Husky runs `lint-staged` which formats staged files with Prettier.
 
 ## Versioning
 
+**CRITICAL FOR AI AGENTS:** You MUST use the npm version scripts below. Do NOT manually edit package.json version or create git tags directly.
+
 Use npm scripts for semver versioning:
 
 ```bash
@@ -73,11 +75,21 @@ npm run version:minor  # 1.0.0 -> 1.1.0 (new features, backward compatible)
 npm run version:major  # 1.0.0 -> 2.0.0 (breaking changes)
 ```
 
-These scripts will:
+These scripts will automatically:
 
 1. Bump version in package.json
 2. Commit the change with message "chore: bump version to X.Y.Z"
 3. Create a git tag `vX.Y.Z`
+
+**⚠️ AI AGENT RULES:**
+
+- NEVER manually edit the `version` field in package.json
+- NEVER run `git tag` directly for versioning
+- ALWAYS use `npm run version:patch|minor|major` commands
+- Choose version type based on change scope:
+  - `patch`: Bug fixes, minor tweaks
+  - `minor`: New features, backward compatible changes
+  - `major`: Breaking API changes
 
 After versioning, push with tags:
 

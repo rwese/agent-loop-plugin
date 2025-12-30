@@ -4,11 +4,44 @@
  * Automatically continues sessions when incomplete tasks remain.
  * This loop monitors session.idle events and injects continuation prompts
  * to keep the agent working until all tasks are complete.
+ *
+ * ## How It Works
+ *
+ * 1. Monitors `session.idle` events (fires when AI stops responding)
+ * 2. Fetches current todo list via OpenCode API
+ * 3. If incomplete todos exist, starts a countdown (default 2 seconds)
+ * 4. After countdown, injects a continuation prompt to keep AI working
+ * 5. Countdown cancels if user sends a new message
+ *
+ * ## Key Features
+ *
+ * - **Countdown with Toast**: Visual feedback before auto-continuing
+ * - **Error Cooldown**: Pauses continuation after errors (prevents loops)
+ * - **Recovery Mode**: Can be manually paused via `markRecovering()`
+ * - **User Override**: User messages cancel pending continuations
+ *
+ * ## Usage
+ *
+ * ```typescript
+ * const taskLoop = createTaskLoop(ctx, {
+ *   countdownSeconds: 3,    // Wait before continuing
+ *   errorCooldownMs: 5000,  // Pause after errors
+ * });
+ *
+ * // Wire into plugin event system
+ * ctx.on("event", taskLoop.handler);
+ * ```
+ *
+ * @module task-loop
  */
 
 import type { PluginContext, Todo, LoopEvent, TaskLoopOptions, Logger } from "./types.js"
 import { isAbortError, createLogger, sendIgnoredMessage, writeOutput } from "./utils.js"
 
+/**
+ * System prompt injected to continue the AI on incomplete tasks.
+ * Designed to be assertive - tells AI to proceed without waiting for user.
+ */
 const CONTINUATION_PROMPT = `[SYSTEM REMINDER - TASK CONTINUATION]
 
 Incomplete tasks remain in your todo list. Continue working on the next pending task.
@@ -17,24 +50,48 @@ Incomplete tasks remain in your todo list. Continue working on the next pending 
 - Mark each task complete when finished
 - Do not stop until all tasks are done`
 
+/**
+ * Per-session state for managing countdowns and recovery.
+ * Each active session has its own state tracked in memory.
+ */
 interface SessionState {
+  /** Timestamp of last error (for cooldown calculation) */
   lastErrorAt?: number
+  /** Timer handle for the continuation injection */
   countdownTimer?: ReturnType<typeof setTimeout>
+  /** Interval handle for countdown toast updates */
   countdownInterval?: ReturnType<typeof setInterval>
+  /** When true, skip continuation (manual recovery mode) */
   isRecovering?: boolean
 }
 
+/**
+ * Task Loop public interface.
+ * Returned by createTaskLoop() factory function.
+ */
 export interface TaskLoop {
-  /** Event handler to wire into plugin event system */
+  /**
+   * Event handler to wire into plugin event system.
+   * Call this for every event: `ctx.on("event", taskLoop.handler)`
+   */
   handler: (input: { event: LoopEvent }) => Promise<void>
 
-  /** Mark session as recovering from error (prevents auto-continuation) */
+  /**
+   * Mark session as recovering from error (prevents auto-continuation).
+   * Use when you need to manually pause the loop.
+   */
   markRecovering: (sessionID: string) => void
 
-  /** Mark session recovery complete (re-enables auto-continuation) */
+  /**
+   * Mark session recovery complete (re-enables auto-continuation).
+   * Call after manual intervention is complete.
+   */
   markRecoveryComplete: (sessionID: string) => void
 
-  /** Clean up session state */
+  /**
+   * Clean up session state (timers, memory).
+   * Called automatically on session.deleted, but can be called manually.
+   */
   cleanup: (sessionID: string) => void
 }
 
@@ -90,6 +147,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       .catch(() => {})
   }
 
+  /**
+   * Get or create session state. Uses lazy initialization.
+   * State is stored in memory (Map) and persists for session lifetime.
+   */
   function getState(sessionID: string): SessionState {
     let state = sessions.get(sessionID)
     if (!state) {
@@ -99,6 +160,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     return state
   }
 
+  /**
+   * Cancel any pending countdown for a session.
+   * Clears both the timer (for injection) and interval (for toast updates).
+   */
   function cancelCountdown(sessionID: string): void {
     const state = sessions.get(sessionID)
     if (!state) return
@@ -113,11 +178,19 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     }
   }
 
+  /**
+   * Clean up all state for a session.
+   * Cancels timers and removes from memory map.
+   */
   function cleanup(sessionID: string): void {
     cancelCountdown(sessionID)
     sessions.delete(sessionID)
   }
 
+  /**
+   * Enter recovery mode - pauses auto-continuation.
+   * Use when manual intervention is needed.
+   */
   const markRecovering = (sessionID: string): void => {
     const state = getState(sessionID)
     state.isRecovering = true
@@ -125,6 +198,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     logger.debug("Skipping: session in recovery mode", { sessionID })
   }
 
+  /**
+   * Exit recovery mode - re-enables auto-continuation.
+   * Call after manual intervention is complete.
+   */
   const markRecoveryComplete = (sessionID: string): void => {
     const state = sessions.get(sessionID)
     if (state) {
@@ -133,6 +210,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     }
   }
 
+  /**
+   * Show countdown toast notification.
+   * Called every second during countdown to update remaining time.
+   */
   async function showCountdownToast(seconds: number, incompleteCount: number): Promise<void> {
     await ctx.client.tui
       .showToast({
@@ -146,14 +227,30 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       .catch(() => {})
   }
 
+  /**
+   * Display a status message in the session UI without affecting AI context.
+   * Uses "ignored" message type so the AI doesn't see these status updates.
+   */
   async function showStatusMessage(sessionID: string, message: string): Promise<void> {
     await sendIgnoredMessage(ctx.client, sessionID, message, logger, { agent, model })
   }
 
+  /**
+   * Count todos that are not completed or cancelled.
+   * These are the tasks that need to be worked on.
+   */
   function getIncompleteCount(todos: Todo[]): number {
     return todos.filter((t) => t.status !== "completed" && t.status !== "cancelled").length
   }
 
+  /**
+   * Inject a continuation prompt to keep the AI working.
+   * Re-fetches todos to get fresh count before injection.
+   *
+   * @param sessionID - The session to continue
+   * @param _incompleteCount - Initial count (re-fetched for accuracy)
+   * @param total - Total todo count for status message
+   */
   async function injectContinuation(
     sessionID: string,
     _incompleteCount: number,
@@ -237,13 +334,23 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     }
   }
 
+  /**
+   * Start the countdown before auto-continuation.
+   *
+   * Creates two timers:
+   * 1. Interval - updates toast every second
+   * 2. Timeout - triggers continuation after countdown
+   *
+   * User messages will cancel both via cancelCountdown().
+   */
   function startCountdown(sessionID: string, incompleteCount: number, total: number): void {
     const state = getState(sessionID)
-    cancelCountdown(sessionID)
+    cancelCountdown(sessionID) // Cancel any existing countdown
 
     let secondsRemaining = countdownSeconds
     showCountdownToast(secondsRemaining, incompleteCount)
 
+    // Update toast every second
     state.countdownInterval = setInterval(() => {
       secondsRemaining--
       if (secondsRemaining > 0) {
@@ -251,6 +358,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       }
     }, 1000)
 
+    // Inject continuation after countdown
     state.countdownTimer = setTimeout(() => {
       cancelCountdown(sessionID)
       injectContinuation(sessionID, incompleteCount, total)
@@ -263,10 +371,19 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     })
   }
 
+  /**
+   * Main event handler - wire this into the plugin event system.
+   *
+   * Event handling:
+   * - session.error: Record error time, cancel countdown
+   * - session.idle: Check todos, start countdown if incomplete
+   * - message.updated: Cancel countdown on user messages
+   * - session.deleted: Clean up state
+   */
   const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
     const props = event.properties
 
-    // Handle session errors
+    // Handle session errors - record time for cooldown calculation
     if (event.type === "session.error") {
       const sessionID = props?.sessionID
       if (!sessionID) return

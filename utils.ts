@@ -1,5 +1,27 @@
 /**
  * Utility functions for agent loops
+ *
+ * This module provides shared utilities used by both Task Loop and Iteration Loop:
+ *
+ * - **State Management**: Read/write loop state to files (YAML frontmatter format)
+ * - **Logging**: Configurable loggers with level filtering and file output
+ * - **Messaging**: Send "ignored" messages to session UI
+ * - **Error Detection**: Identify abort/cancellation errors
+ * - **Frontmatter Parsing**: Simple YAML frontmatter parser
+ *
+ * ## State File Format
+ *
+ * Loop state is persisted as Markdown with YAML frontmatter:
+ * ```
+ * ---
+ * active: true
+ * iteration: 3
+ * max_iterations: 20
+ * ---
+ * Original prompt content here...
+ * ```
+ *
+ * @module utils
  */
 
 import {
@@ -14,13 +36,35 @@ import { dirname, join } from "node:path"
 import type { IterationLoopState, Logger, LogLevel } from "./types.js"
 
 /**
- * Simple frontmatter parser for loop state files
+ * Result of parsing frontmatter from a file.
+ * Contains extracted YAML data and the remaining body content.
  */
 export interface FrontmatterResult<T = Record<string, unknown>> {
+  /** Parsed YAML data from frontmatter */
   data: T
+  /** Content after the frontmatter section */
   body: string
 }
 
+/**
+ * Parse YAML frontmatter from a string.
+ *
+ * Frontmatter format:
+ * ```
+ * ---
+ * key: value
+ * number: 42
+ * boolean: true
+ * ---
+ * Body content here...
+ * ```
+ *
+ * Supports: strings, numbers, booleans. Strips quotes from string values.
+ * Note: This is a simple parser, not a full YAML implementation.
+ *
+ * @param content - The full file content with potential frontmatter
+ * @returns Parsed data and body, or empty data if no frontmatter found
+ */
 export function parseFrontmatter<T = Record<string, unknown>>(
   content: string
 ): FrontmatterResult<T> {
@@ -58,7 +102,18 @@ export function parseFrontmatter<T = Record<string, unknown>>(
 }
 
 /**
- * Check if an error is an abort/cancellation error
+ * Check if an error is an abort/cancellation error.
+ *
+ * Detects various abort error patterns:
+ * - MessageAbortedError, AbortError names
+ * - DOMException with "abort" message
+ * - Error messages containing "aborted", "cancelled", "interrupted"
+ *
+ * Used to distinguish user cancellations from real errors.
+ * Abort errors typically shouldn't trigger error cooldowns.
+ *
+ * @param error - The error to check (can be any type)
+ * @returns true if this appears to be an abort/cancellation
  */
 export function isAbortError(error: unknown): boolean {
   if (!error) return false
@@ -98,7 +153,13 @@ export function isAbortError(error: unknown): boolean {
 }
 
 /**
- * Get state file path for iteration loop
+ * Get the full path to the iteration loop state file.
+ *
+ * Default location: `.agent-loop/iteration-state.md`
+ * Can be customized via options.
+ *
+ * @param directory - Base directory (usually ctx.directory)
+ * @param customPath - Optional custom path relative to directory
  */
 export function getStateFilePath(directory: string, customPath?: string): string {
   const defaultPath = ".agent-loop/iteration-state.md"
@@ -106,7 +167,21 @@ export function getStateFilePath(directory: string, customPath?: string): string
 }
 
 /**
- * Read Iteration Loop state from file
+ * Read Iteration Loop state from the persisted file.
+ *
+ * Parses the YAML frontmatter to extract:
+ * - active: boolean
+ * - iteration: number
+ * - max_iterations: number
+ * - completion_marker: string
+ * - started_at: ISO date string
+ * - session_id: optional session binding
+ *
+ * The body of the file contains the original prompt.
+ *
+ * @param directory - Base directory
+ * @param customPath - Optional custom state file path
+ * @returns Parsed state or null if file doesn't exist or is invalid
  */
 export function readLoopState(directory: string, customPath?: string): IterationLoopState | null {
   const filePath = getStateFilePath(directory, customPath)
@@ -153,7 +228,15 @@ export function readLoopState(directory: string, customPath?: string): Iteration
 }
 
 /**
- * Write Iteration Loop state to file
+ * Write Iteration Loop state to file.
+ *
+ * Creates the directory structure if needed.
+ * State is written as Markdown with YAML frontmatter.
+ *
+ * @param directory - Base directory
+ * @param state - The loop state to persist
+ * @param customPath - Optional custom state file path
+ * @returns true on success, false on error
  */
 export function writeLoopState(
   directory: string,
@@ -187,7 +270,12 @@ ${state.prompt}
 }
 
 /**
- * Clear Iteration Loop state file
+ * Delete the Iteration Loop state file.
+ * Called when loop completes or is cancelled.
+ *
+ * @param directory - Base directory
+ * @param customPath - Optional custom state file path
+ * @returns true on success, false on error
  */
 export function clearLoopState(directory: string, customPath?: string): boolean {
   const filePath = getStateFilePath(directory, customPath)
@@ -203,7 +291,12 @@ export function clearLoopState(directory: string, customPath?: string): boolean 
 }
 
 /**
- * Increment Iteration Loop iteration counter
+ * Increment the iteration counter in the state file.
+ * Reads current state, increments iteration, writes back.
+ *
+ * @param directory - Base directory
+ * @param customPath - Optional custom state file path
+ * @returns Updated state or null on error
  */
 export function incrementIteration(
   directory: string,
@@ -220,7 +313,14 @@ export function incrementIteration(
 }
 
 /**
- * Log level priority mapping for filtering
+ * Log level priority mapping.
+ * Higher number = more verbose. Used for level filtering.
+ *
+ * silent (0) - No output
+ * error (1)  - Only errors
+ * warn (2)   - Errors + warnings
+ * info (3)   - Normal operation logs
+ * debug (4)  - Verbose debugging
  */
 const LOG_LEVELS: Record<LogLevel, number> = {
   silent: 0,

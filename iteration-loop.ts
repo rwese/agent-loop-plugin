@@ -5,6 +5,47 @@
  * Uses iteration counting and state persistence to prevent infinite loops.
  *
  * The agent must output: <completion>MARKER_TEXT</completion> to signal completion.
+ *
+ * ## How It Works
+ *
+ * 1. User starts a loop with `startLoop()` or via `<iterationLoop>` tag in prompt
+ * 2. State is persisted to `.agent-loop/iteration-state.md` (YAML frontmatter + prompt body)
+ * 3. On `session.idle`, checks transcript for completion marker
+ * 4. If not found, increments iteration and sends continuation prompt
+ * 5. Repeats until marker found or max iterations reached
+ *
+ * ## State File Format
+ *
+ * ```yaml
+ * ---
+ * active: true
+ * iteration: 3
+ * max_iterations: 20
+ * completion_marker: "DONE"
+ * started_at: "2024-01-15T10:30:00Z"
+ * session_id: "abc123"
+ * ---
+ * Original task prompt here...
+ * ```
+ *
+ * ## Usage Patterns
+ *
+ * ### Direct API:
+ * ```typescript
+ * iterationLoop.startLoop(sessionID, "Build a REST API", {
+ *   maxIterations: 20,
+ *   completionMarker: "API_READY"
+ * });
+ * ```
+ *
+ * ### Via Prompt Tag:
+ * ```
+ * <iterationLoop max="20" marker="API_READY">
+ * Build a REST API with authentication
+ * </iterationLoop>
+ * ```
+ *
+ * @module iteration-loop
  */
 
 import { existsSync, readFileSync } from "node:fs"
@@ -26,9 +67,16 @@ import {
 } from "./utils.js"
 import { parseIterationLoopTag, buildIterationStartPrompt } from "./prompt-parser.js"
 
+/** Default maximum iterations before auto-stopping (safety limit) */
 const DEFAULT_MAX_ITERATIONS = 100
+
+/** Default completion marker the AI must output to signal task completion */
 const DEFAULT_COMPLETION_MARKER = "DONE"
 
+/**
+ * Template for continuation prompts sent when completion marker not detected.
+ * Placeholders: {{ITERATION}}, {{MAX}}, {{MARKER}}, {{PROMPT}}
+ */
 const CONTINUATION_PROMPT = `[ITERATION LOOP - ITERATION {{ITERATION}}/{{MAX}}]
 
 Your previous attempt did not output the completion marker. Continue working on the task.
@@ -42,7 +90,12 @@ IMPORTANT:
 Original task:
 {{PROMPT}}`
 
+/**
+ * Per-session state for tracking recovery from errors.
+ * Prevents continuation prompts during error recovery periods.
+ */
 interface SessionState {
+  /** When true, skip continuation prompts (session recovering from error) */
   isRecovering?: boolean
 }
 
@@ -165,6 +218,10 @@ export function createIterationLoop(
       .catch(() => {})
   }
 
+  /**
+   * Get or create session state for tracking recovery status.
+   * Uses lazy initialization pattern - creates state on first access.
+   */
   function getSessionState(sessionID: string): SessionState {
     let state = sessions.get(sessionID)
     if (!state) {
@@ -174,6 +231,14 @@ export function createIterationLoop(
     return state
   }
 
+  /**
+   * Check if the AI has output the completion marker in the transcript.
+   * Reads the transcript file and searches for: <completion>MARKER</completion>
+   *
+   * @param transcriptPath - Path to the session transcript file
+   * @param marker - The completion marker to search for
+   * @returns true if marker found, false otherwise
+   */
   function detectCompletionMarker(transcriptPath: string | undefined, marker: string): boolean {
     if (!transcriptPath) return false
 
@@ -181,6 +246,7 @@ export function createIterationLoop(
       if (!existsSync(transcriptPath)) return false
 
       const content = readFileSync(transcriptPath, "utf-8")
+      // Case-insensitive, allows whitespace around marker
       const pattern = new RegExp(`<completion>\\s*${escapeRegex(marker)}\\s*</completion>`, "is")
       return pattern.test(content)
     } catch {
@@ -188,14 +254,31 @@ export function createIterationLoop(
     }
   }
 
+  /**
+   * Escape special regex characters in a string for safe use in RegExp.
+   * Prevents injection attacks when marker contains regex metacharacters.
+   */
   function escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
 
+  /**
+   * Display a status message in the session UI without affecting AI context.
+   * Uses "ignored" message type so the AI doesn't see these status updates.
+   */
   async function showStatusMessage(sessionID: string, message: string): Promise<void> {
     await sendIgnoredMessage(ctx.client, sessionID, message, logger, { agent, model })
   }
 
+  /**
+   * Start a new iteration loop for the given session.
+   * Creates state file and prepares for continuation prompts.
+   *
+   * @param sessionID - The OpenCode session ID
+   * @param prompt - The task for the AI to complete
+   * @param loopOptions - Optional max iterations and completion marker
+   * @returns true if loop started successfully, false on error
+   */
   const startLoop = (
     sessionID: string,
     prompt: string,
@@ -231,6 +314,13 @@ export function createIterationLoop(
     return success
   }
 
+  /**
+   * Cancel an active iteration loop.
+   * Only cancels if the loop belongs to the specified session.
+   *
+   * @param sessionID - The session ID whose loop to cancel
+   * @returns true if cancelled, false if no matching loop found
+   */
   const cancelLoop = (sessionID: string): boolean => {
     const state = readLoopState(ctx.directory, stateFilePath)
     if (!state || state.session_id !== sessionID) {
@@ -251,10 +341,19 @@ export function createIterationLoop(
     return success
   }
 
+  /** Get the current loop state from the persisted state file */
   const getState = (): IterationLoopState | null => {
     return readLoopState(ctx.directory, stateFilePath)
   }
 
+  /**
+   * Main event handler - wire this into the plugin event system.
+   *
+   * Responds to:
+   * - session.idle: Check for completion, continue if needed
+   * - session.deleted: Clean up state for deleted sessions
+   * - session.error: Mark session as recovering (temporary pause)
+   */
   const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
     const props = event.properties
 
