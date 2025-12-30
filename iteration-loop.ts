@@ -23,7 +23,6 @@ import {
   incrementIteration,
 } from "./utils.js"
 
-const HOOK_NAME = "iteration-loop"
 const DEFAULT_MAX_ITERATIONS = 100
 const DEFAULT_COMPLETION_MARKER = "DONE"
 

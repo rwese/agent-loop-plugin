@@ -9,8 +9,6 @@
 import type { PluginContext, Todo, LoopEvent, TaskLoopOptions, Logger } from "./types.js"
 import { isAbortError, createLogger } from "./utils.js"
 
-const HOOK_NAME = "task-loop"
-
 const CONTINUATION_PROMPT = `[SYSTEM REMINDER - TASK CONTINUATION]
 
 Incomplete tasks remain in your todo list. Continue working on the next pending task.

@@ -2,7 +2,7 @@
  * Tests for TaskLoop functionality
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi, beforeAll, afterAll } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createTaskLoop } from "../task-loop"
 import type { PluginContext, Todo, LoopEvent } from "../types"
 
@@ -17,7 +17,7 @@ describe("TaskLoop", () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
-    
+
     // Setup default mock functions
     mockTodoFn = vi.fn().mockResolvedValue({ data: [] })
     mockPromptFn = vi.fn().mockResolvedValue(undefined)
@@ -72,14 +72,14 @@ describe("TaskLoop", () => {
       mockTodoFn.mockResolvedValue({ data: todos })
 
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 0 })
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: { sessionID: "session-123" },
       }
 
       await taskLoop.handler({ event })
-      
+
       // Advance timers to trigger the countdown timeout
       vi.advanceTimersByTime(0)
 
@@ -94,7 +94,7 @@ describe("TaskLoop", () => {
       mockTodoFn.mockResolvedValue({ data: todos })
 
       const taskLoop = createTaskLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: { sessionID: "session-123" },
@@ -109,7 +109,7 @@ describe("TaskLoop", () => {
       mockTodoFn.mockResolvedValue({ data: [] })
 
       const taskLoop = createTaskLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: { sessionID: "session-123" },
@@ -122,7 +122,7 @@ describe("TaskLoop", () => {
 
     it("should handle session without sessionID", async () => {
       const taskLoop = createTaskLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: {},
@@ -136,13 +136,11 @@ describe("TaskLoop", () => {
 
   describe("countdown", () => {
     it("should start countdown on session.idle with incomplete todos", async () => {
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 2 })
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: { sessionID: "session-123" },
@@ -154,13 +152,11 @@ describe("TaskLoop", () => {
     })
 
     it("should cancel countdown on user message", async () => {
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-      
+
       // First, trigger session.idle to start countdown
       const idleEvent: LoopEvent = {
         type: "session.idle",
@@ -185,13 +181,11 @@ describe("TaskLoop", () => {
     })
 
     it("should cancel countdown on assistant message", async () => {
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-      
+
       // First, trigger session.idle to start countdown
       const idleEvent: LoopEvent = {
         type: "session.idle",
@@ -219,13 +213,11 @@ describe("TaskLoop", () => {
   describe("recovery mode", () => {
     it("should prevent continuation when session is recovering", async () => {
       const taskLoop = createTaskLoop(mockContext)
-      
+
       // Mark session as recovering
       taskLoop.markRecovering("session-123")
 
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       const event: LoopEvent = {
@@ -240,14 +232,12 @@ describe("TaskLoop", () => {
 
     it("should re-enable continuation after recovery completes", async () => {
       const taskLoop = createTaskLoop(mockContext)
-      
+
       // Mark session as recovering and then complete
       taskLoop.markRecovering("session-123")
       taskLoop.markRecoveryComplete("session-123")
 
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       const event: LoopEvent = {
@@ -264,7 +254,7 @@ describe("TaskLoop", () => {
   describe("error cooldown", () => {
     it("should prevent continuation during error cooldown", async () => {
       const taskLoop = createTaskLoop(mockContext, { errorCooldownMs: 5000 })
-      
+
       // Simulate an error
       const errorEvent: LoopEvent = {
         type: "session.error",
@@ -272,9 +262,7 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: errorEvent })
 
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Try to inject continuation during cooldown
@@ -289,7 +277,7 @@ describe("TaskLoop", () => {
 
     it("should allow continuation after cooldown expires", async () => {
       const taskLoop = createTaskLoop(mockContext, { errorCooldownMs: 100 })
-      
+
       // Simulate an error
       const errorEvent: LoopEvent = {
         type: "session.error",
@@ -300,9 +288,7 @@ describe("TaskLoop", () => {
       // Advance timers past cooldown
       vi.advanceTimersByTime(200)
 
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Try to inject continuation after cooldown
@@ -317,7 +303,7 @@ describe("TaskLoop", () => {
 
     it("should clear error state on user message", async () => {
       const taskLoop = createTaskLoop(mockContext, { errorCooldownMs: 5000 })
-      
+
       // Simulate an error
       const errorEvent: LoopEvent = {
         type: "session.error",
@@ -334,9 +320,7 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: userMessageEvent })
 
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Should now allow continuation
@@ -353,7 +337,7 @@ describe("TaskLoop", () => {
   describe("cleanup", () => {
     it("should cleanup session state on session.deleted", async () => {
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-      
+
       // Mark session as recovering first
       taskLoop.markRecovering("session-123")
 
@@ -365,9 +349,7 @@ describe("TaskLoop", () => {
       await taskLoop.handler({ event: deleteEvent })
 
       // Session should be cleaned up
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Session should not be in recovering state anymore
@@ -382,10 +364,8 @@ describe("TaskLoop", () => {
 
     it("should cancel countdown on session deletion", async () => {
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-      
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Start countdown
@@ -413,10 +393,8 @@ describe("TaskLoop", () => {
   describe("tool execution events", () => {
     it("should cancel countdown on tool.execute.before", async () => {
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-      
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Start countdown
@@ -442,10 +420,8 @@ describe("TaskLoop", () => {
 
     it("should cancel countdown on tool.execute.after", async () => {
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-      
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Start countdown
@@ -473,10 +449,8 @@ describe("TaskLoop", () => {
   describe("message.part.updated events", () => {
     it("should cancel countdown on assistant message part update", async () => {
       const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-      
-      const todos: Todo[] = [
-        { id: "1", content: "Task 1", status: "pending", priority: "high" },
-      ]
+
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
       // Start countdown

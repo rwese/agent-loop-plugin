@@ -2,7 +2,7 @@
  * Tests for utility functions
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import {
   parseFrontmatter,
   isAbortError,
@@ -343,11 +343,9 @@ iteration: 1
 ---
 Prompt`)
 
-    const result = readLoopState(testDirectory, customPath)
+    readLoopState(testDirectory, customPath)
 
-    expect(fs.existsSync).toHaveBeenCalledWith(
-      path.join(testDirectory, customPath)
-    )
+    expect(fs.existsSync).toHaveBeenCalledWith(path.join(testDirectory, customPath))
   })
 })
 
@@ -482,9 +480,7 @@ describe("clearLoopState", () => {
 
     clearLoopState(testDirectory, customPath)
 
-    expect(unlinkSpy).toHaveBeenCalledWith(
-      path.join(testDirectory, customPath)
-    )
+    expect(unlinkSpy).toHaveBeenCalledWith(path.join(testDirectory, customPath))
   })
 })
 

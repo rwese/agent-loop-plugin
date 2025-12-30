@@ -4,9 +4,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { createIterationLoop } from "../iteration-loop"
-import type { PluginContext, LoopEvent, IterationLoopState } from "../types"
+import type { PluginContext, LoopEvent } from "../types"
 import * as fs from "node:fs"
-import * as path from "node:path"
+// path module is used by the mocked fs operations
 
 // Mock the node:fs module
 vi.mock("node:fs")
@@ -22,7 +22,7 @@ describe("IterationLoop", () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
-    
+
     // Setup mock functions
     mockPromptFn = vi.fn().mockResolvedValue(undefined)
     mockShowToastFn = vi.fn().mockResolvedValue(undefined)
@@ -238,7 +238,7 @@ session_id: "session-123"
 Prompt`)
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: { sessionID: "session-123" },
@@ -262,7 +262,9 @@ session_id: "session-123"
 ---
 Prompt`)
       // Return different content for transcript check
-      mockReadFileSync.mockReturnValueOnce(`---
+      mockReadFileSync
+        .mockReturnValueOnce(
+          `---
 active: true
 iteration: 5
 max_iterations: 100
@@ -270,13 +272,15 @@ completion_marker: "DONE"
 started_at: "2024-01-01T00:00:00.000Z"
 session_id: "session-123"
 ---
-Prompt`).mockReturnValueOnce("Transcript with <completion>DONE</completion> marker")
+Prompt`
+        )
+        .mockReturnValueOnce("Transcript with <completion>DONE</completion> marker")
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
-        properties: { 
+        properties: {
           sessionID: "session-123",
           transcriptPath: "/path/to/transcript.txt",
         },
@@ -302,7 +306,7 @@ session_id: "session-123"
 Prompt`)
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: { sessionID: "session-123" },
@@ -327,7 +331,9 @@ session_id: "session-123"
 ---
 Prompt`)
       // Return content without completion marker
-      mockReadFileSync.mockReturnValueOnce(`---
+      mockReadFileSync
+        .mockReturnValueOnce(
+          `---
 active: true
 iteration: 2
 max_iterations: 100
@@ -335,13 +341,15 @@ completion_marker: "DONE"
 started_at: "2024-01-01T00:00:00.000Z"
 session_id: "session-123"
 ---
-Prompt`).mockReturnValueOnce("Transcript without completion marker")
+Prompt`
+        )
+        .mockReturnValueOnce("Transcript without completion marker")
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
-        properties: { 
+        properties: {
           sessionID: "session-123",
           transcriptPath: "/path/to/transcript.txt",
         },
@@ -365,7 +373,7 @@ session_id: "different-session"
 Prompt`)
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.idle",
         properties: { sessionID: "session-123" },
@@ -391,7 +399,7 @@ session_id: "session-123"
 Prompt`)
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.deleted",
         properties: { info: { id: "session-123" } },
@@ -415,7 +423,7 @@ session_id: "session-123"
 Prompt`)
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const event: LoopEvent = {
         type: "session.deleted",
         properties: { info: { id: "different-session" } },
@@ -441,7 +449,7 @@ session_id: "session-123"
 Prompt`)
 
       const iterationLoop = createIterationLoop(mockContext)
-      
+
       const errorEvent: LoopEvent = {
         type: "session.error",
         properties: { sessionID: "session-123" },

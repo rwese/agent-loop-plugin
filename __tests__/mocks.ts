@@ -3,7 +3,7 @@
  */
 
 import type { PluginContext, Todo, IterationLoopState } from "../types"
-import { vi, type Mocked } from "vitest"
+import { vi } from "vitest"
 
 /**
  * Create a mock PluginContext with all required methods
@@ -68,7 +68,9 @@ export function setupFileSystemMocks() {
 /**
  * Create a sample iteration loop state for testing
  */
-export function createMockIterationLoopState(overrides: Partial<IterationLoopState> = {}): IterationLoopState {
+export function createMockIterationLoopState(
+  overrides: Partial<IterationLoopState> = {}
+): IterationLoopState {
   return {
     active: true,
     iteration: 1,
@@ -90,7 +92,7 @@ export function createMockTodos(overrides: Partial<Todo>[] = []): Todo[] {
     { id: "2", content: "Task 2", status: "in_progress", priority: "medium" },
     { id: "3", content: "Task 3", status: "completed", priority: "low" },
   ]
-  return overrides.length > 0 
+  return overrides.length > 0
     ? defaultTodos.map((todo, index) => ({ ...todo, ...overrides[index] }))
     : defaultTodos
 }
