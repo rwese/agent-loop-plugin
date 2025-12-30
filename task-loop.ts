@@ -334,7 +334,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       return
     }
 
-    // Cancel countdown on user message
+    // Cancel countdown on user message only
+    // Note: We only cancel on user messages, not assistant messages.
+    // session.idle fires after the assistant is done, so we don't want
+    // late-arriving message.updated events to cancel our countdown.
     if (event.type === "message.updated") {
       const info = props?.info
       const sessionID = info?.sessionID
@@ -353,31 +356,6 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
             })
           }
         }
-      }
-
-      if (role === "assistant") {
-        cancelCountdown(sessionID)
-      }
-      return
-    }
-
-    // Cancel countdown on message part updates
-    if (event.type === "message.part.updated") {
-      const info = props?.info
-      const sessionID = info?.sessionID
-      const role = info?.role
-
-      if (sessionID && role === "assistant") {
-        cancelCountdown(sessionID)
-      }
-      return
-    }
-
-    // Cancel countdown during tool execution
-    if (event.type === "tool.execute.before" || event.type === "tool.execute.after") {
-      const sessionID = props?.sessionID
-      if (sessionID) {
-        cancelCountdown(sessionID)
       }
       return
     }

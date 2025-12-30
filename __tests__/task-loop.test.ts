@@ -184,11 +184,11 @@ describe("TaskLoop", () => {
       expect(mockPromptFn).not.toHaveBeenCalled()
     })
 
-    it("should cancel countdown on assistant message", async () => {
+    it("should NOT cancel countdown on assistant message (only user messages cancel)", async () => {
       const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
 
-      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
+      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 1 })
 
       // First, trigger session.idle to start countdown
       const idleEvent: LoopEvent = {
@@ -197,7 +197,7 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: idleEvent })
 
-      // Then send assistant message
+      // Then send assistant message - should NOT cancel countdown
       const assistantMessageEvent: LoopEvent = {
         type: "message.updated",
         properties: {
@@ -207,10 +207,10 @@ describe("TaskLoop", () => {
       await taskLoop.handler({ event: assistantMessageEvent })
 
       // Advance timers past countdown using async version
-      await vi.advanceTimersByTimeAsync(6000)
+      await vi.advanceTimersByTimeAsync(2000)
 
-      // Prompt should not be called due to countdown cancellation
-      expect(mockPromptFn).not.toHaveBeenCalled()
+      // Prompt SHOULD be called because assistant messages don't cancel countdown
+      expect(mockPromptFn).toHaveBeenCalled()
     })
   })
 
@@ -406,90 +406,6 @@ describe("TaskLoop", () => {
     })
   })
 
-  describe("tool execution events", () => {
-    it("should cancel countdown on tool.execute.before", async () => {
-      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-
-      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
-      mockTodoFn.mockResolvedValue({ data: todos })
-
-      // Start countdown
-      const idleEvent: LoopEvent = {
-        type: "session.idle",
-        properties: { sessionID: "session-123" },
-      }
-      await taskLoop.handler({ event: idleEvent })
-
-      // Tool execution starts
-      const toolEvent: LoopEvent = {
-        type: "tool.execute.before",
-        properties: { sessionID: "session-123" },
-      }
-      await taskLoop.handler({ event: toolEvent })
-
-      // Advance timers past countdown using async version
-      await vi.advanceTimersByTimeAsync(6000)
-
-      // Prompt should not be called due to countdown cancellation
-      expect(mockPromptFn).not.toHaveBeenCalled()
-    })
-
-    it("should cancel countdown on tool.execute.after", async () => {
-      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-
-      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
-      mockTodoFn.mockResolvedValue({ data: todos })
-
-      // Start countdown
-      const idleEvent: LoopEvent = {
-        type: "session.idle",
-        properties: { sessionID: "session-123" },
-      }
-      await taskLoop.handler({ event: idleEvent })
-
-      // Tool execution completes
-      const toolEvent: LoopEvent = {
-        type: "tool.execute.after",
-        properties: { sessionID: "session-123" },
-      }
-      await taskLoop.handler({ event: toolEvent })
-
-      // Advance timers past countdown using async version
-      await vi.advanceTimersByTimeAsync(6000)
-
-      // Prompt should not be called due to countdown cancellation
-      expect(mockPromptFn).not.toHaveBeenCalled()
-    })
-  })
-
-  describe("message.part.updated events", () => {
-    it("should cancel countdown on assistant message part update", async () => {
-      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
-
-      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
-      mockTodoFn.mockResolvedValue({ data: todos })
-
-      // Start countdown
-      const idleEvent: LoopEvent = {
-        type: "session.idle",
-        properties: { sessionID: "session-123" },
-      }
-      await taskLoop.handler({ event: idleEvent })
-
-      // Message part update
-      const partUpdateEvent: LoopEvent = {
-        type: "message.part.updated",
-        properties: {
-          info: { sessionID: "session-123", role: "assistant" },
-        },
-      }
-      await taskLoop.handler({ event: partUpdateEvent })
-
-      // Advance timers past countdown using async version
-      await vi.advanceTimersByTimeAsync(6000)
-
-      // Prompt should not be called due to countdown cancellation
-      expect(mockPromptFn).not.toHaveBeenCalled()
-    })
-  })
+  // Note: tool.execute.* and message.part.updated events are intentionally not handled
+  // to reduce duplicate event processing. message.updated is sufficient for activity detection.
 })
