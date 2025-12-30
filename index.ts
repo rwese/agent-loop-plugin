@@ -23,6 +23,8 @@ export type {
   IterationLoopState,
   IterationLoopOptions,
   TaskLoopOptions,
+  Logger,
+  LogLevel,
 } from "./types.js"
 
 // Export Task Loop
@@ -37,6 +39,7 @@ export type { IterationLoop } from "./iteration-loop.js"
 export {
   isAbortError,
   log,
+  createLogger,
   readLoopState,
   writeLoopState,
   clearLoopState,

@@ -8,8 +8,20 @@
  */
 
 import { existsSync, readFileSync } from "node:fs"
-import type { PluginContext, IterationLoopState, IterationLoopOptions, LoopEvent } from "./types.js"
-import { log, readLoopState, writeLoopState, clearLoopState, incrementIteration } from "./utils.js"
+import type {
+  PluginContext,
+  IterationLoopState,
+  IterationLoopOptions,
+  LoopEvent,
+  Logger,
+} from "./types.js"
+import {
+  createLogger,
+  readLoopState,
+  writeLoopState,
+  clearLoopState,
+  incrementIteration,
+} from "./utils.js"
 
 const HOOK_NAME = "iteration-loop"
 const DEFAULT_MAX_ITERATIONS = 100
@@ -81,8 +93,11 @@ export function createIterationLoop(
     defaultMaxIterations = DEFAULT_MAX_ITERATIONS,
     defaultCompletionMarker = DEFAULT_COMPLETION_MARKER,
     stateFilePath,
+    logger: customLogger,
+    logLevel = "info",
   } = options
 
+  const logger: Logger = createLogger(customLogger, logLevel)
   const sessions = new Map<string, SessionState>()
 
   function getSessionState(sessionID: string): SessionState {
@@ -129,7 +144,7 @@ export function createIterationLoop(
 
     const success = writeLoopState(ctx.directory, state, stateFilePath)
     if (success) {
-      log(`[${HOOK_NAME}] Loop started`, {
+      logger.info(`Starting iteration 1 of ${state.max_iterations}`, {
         sessionID,
         maxIterations: state.max_iterations,
         completionMarker: state.completion_marker,
@@ -146,7 +161,7 @@ export function createIterationLoop(
 
     const success = clearLoopState(ctx.directory, stateFilePath)
     if (success) {
-      log(`[${HOOK_NAME}] Loop cancelled`, { sessionID, iteration: state.iteration })
+      logger.info("Iteration loop cancelled", { sessionID, iteration: state.iteration })
     }
     return success
   }
@@ -165,7 +180,7 @@ export function createIterationLoop(
 
       const sessionState = getSessionState(sessionID)
       if (sessionState.isRecovering) {
-        log(`[${HOOK_NAME}] Skipped: in recovery`, { sessionID })
+        logger.debug("Skipping: session in recovery mode", { sessionID })
         return
       }
 
@@ -181,12 +196,20 @@ export function createIterationLoop(
       const transcriptPath = props?.transcriptPath as string | undefined
 
       // Check for completion
+      logger.debug("Checking for completion marker...", {
+        sessionID,
+        marker: state.completion_marker,
+      })
+
       if (detectCompletionMarker(transcriptPath, state.completion_marker)) {
-        log(`[${HOOK_NAME}] Completion detected!`, {
-          sessionID,
-          iteration: state.iteration,
-          marker: state.completion_marker,
-        })
+        logger.info(
+          `Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
+          {
+            sessionID,
+            iteration: state.iteration,
+            marker: state.completion_marker,
+          }
+        )
         clearLoopState(ctx.directory, stateFilePath)
 
         await ctx.client.tui
@@ -205,7 +228,7 @@ export function createIterationLoop(
 
       // Check max iterations
       if (state.iteration >= state.max_iterations) {
-        log(`[${HOOK_NAME}] Max iterations reached`, {
+        logger.warn("Max iterations reached without completion", {
           sessionID,
           iteration: state.iteration,
           max: state.max_iterations,
@@ -229,11 +252,11 @@ export function createIterationLoop(
       // Increment and continue
       const newState = incrementIteration(ctx.directory, stateFilePath)
       if (!newState) {
-        log(`[${HOOK_NAME}] Failed to increment iteration`, { sessionID })
+        logger.error("Failed to increment iteration", { sessionID })
         return
       }
 
-      log(`[${HOOK_NAME}] Continuing loop`, {
+      logger.info(`Starting iteration ${newState.iteration} of ${newState.max_iterations}`, {
         sessionID,
         iteration: newState.iteration,
         max: newState.max_iterations,
@@ -267,7 +290,7 @@ export function createIterationLoop(
           query: { directory: ctx.directory },
         })
       } catch (err) {
-        log(`[${HOOK_NAME}] Failed to inject continuation`, {
+        logger.error("Failed to inject continuation prompt", {
           sessionID,
           error: String(err),
         })
@@ -281,7 +304,7 @@ export function createIterationLoop(
         const state = readLoopState(ctx.directory, stateFilePath)
         if (state?.session_id === sessionInfo.id) {
           clearLoopState(ctx.directory, stateFilePath)
-          log(`[${HOOK_NAME}] Session deleted, loop cleared`, { sessionID: sessionInfo.id })
+          logger.debug("Session deleted, loop cleared", { sessionID: sessionInfo.id })
         }
         sessions.delete(sessionInfo.id)
       }

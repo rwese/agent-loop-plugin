@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
-import type { IterationLoopState } from "./types.js"
+import type { IterationLoopState, Logger, LogLevel } from "./types.js"
 
 /**
  * Simple frontmatter parser for loop state files
@@ -197,7 +197,93 @@ export function incrementIteration(
 }
 
 /**
+ * Log level priority mapping for filtering
+ */
+const LOG_LEVELS: Record<LogLevel, number> = {
+  silent: 0,
+  error: 1,
+  warn: 2,
+  info: 3,
+  debug: 4,
+}
+
+/**
+ * Create a logger with level filtering and formatting
+ *
+ * @param customLogger - Optional custom logger implementation (defaults to console)
+ * @param logLevel - Log level for filtering (defaults to 'info')
+ * @returns Logger instance with level filtering
+ *
+ * @example
+ * ```typescript
+ * const logger = createLogger(console, 'debug');
+ * logger.debug('Starting process...', { count: 5 });
+ * logger.info('Process complete');
+ * ```
+ */
+export function createLogger(customLogger?: Partial<Logger>, logLevel: LogLevel = "info"): Logger {
+  const currentLevel = LOG_LEVELS[logLevel]
+
+  function shouldLog(level: LogLevel): boolean {
+    return LOG_LEVELS[level] <= currentLevel
+  }
+
+  function formatMessage(level: string, message: string, data?: Record<string, unknown>): string {
+    const timestamp = new Date().toISOString()
+    const dataStr = data ? ` ${JSON.stringify(data)}` : ""
+    return `[${timestamp}] [${level.toUpperCase()}] ${message}${dataStr}`
+  }
+
+  return {
+    debug(message: string, data?: Record<string, unknown>): void {
+      if (shouldLog("debug")) {
+        const formatted = formatMessage("debug", message, data)
+        if (customLogger?.debug) {
+          customLogger.debug(formatted, data)
+        } else {
+          console.debug(formatted)
+        }
+      }
+    },
+
+    info(message: string, data?: Record<string, unknown>): void {
+      if (shouldLog("info")) {
+        const formatted = formatMessage("info", message, data)
+        if (customLogger?.info) {
+          customLogger.info(formatted, data)
+        } else {
+          console.info(formatted)
+        }
+      }
+    },
+
+    warn(message: string, data?: Record<string, unknown>): void {
+      if (shouldLog("warn")) {
+        const formatted = formatMessage("warn", message, data)
+        if (customLogger?.warn) {
+          customLogger.warn(formatted, data)
+        } else {
+          console.warn(formatted)
+        }
+      }
+    },
+
+    error(message: string, data?: Record<string, unknown>): void {
+      if (shouldLog("error")) {
+        const formatted = formatMessage("error", message, data)
+        if (customLogger?.error) {
+          customLogger.error(formatted, data)
+        } else {
+          console.error(formatted)
+        }
+      }
+    },
+  }
+}
+
+/**
  * Simple logger (can be replaced with custom implementation)
+ * @deprecated Use createLogger instead
  */
 export function log(message: string, data?: Record<string, unknown>): void {
   const timestamp = new Date().toISOString()
