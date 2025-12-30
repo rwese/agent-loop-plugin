@@ -93,6 +93,27 @@ export interface IterationLoopOptions {
 
   /** Custom state file path (relative to directory) */
   stateFilePath?: string
+
+  /** Custom logger instance (defaults to console) */
+  logger?: Logger
+
+  /** Log level for filtering output (defaults to 'info') */
+  logLevel?: LogLevel
+}
+
+/**
+ * Log level for filtering log output
+ */
+export type LogLevel = "silent" | "error" | "warn" | "info" | "debug"
+
+/**
+ * Logger interface for structured logging
+ */
+export interface Logger {
+  debug(message: string, data?: Record<string, unknown>): void
+  info(message: string, data?: Record<string, unknown>): void
+  warn(message: string, data?: Record<string, unknown>): void
+  error(message: string, data?: Record<string, unknown>): void
 }
 
 /**
@@ -107,4 +128,10 @@ export interface TaskLoopOptions {
 
   /** Toast notification duration in milliseconds */
   toastDurationMs?: number
+
+  /** Custom logger instance (defaults to console) */
+  logger?: Logger
+
+  /** Log level for filtering output (defaults to 'info') */
+  logLevel?: LogLevel
 }
