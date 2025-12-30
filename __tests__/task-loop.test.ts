@@ -23,7 +23,7 @@ describe("TaskLoop", () => {
     mockPromptFn = vi.fn().mockResolvedValue(undefined)
     mockShowToastFn = vi.fn().mockResolvedValue(undefined)
 
-    // Create mock context
+    // Create mock context - cast to suppress vitest mock type errors
     mockContext = {
       directory: "/test/directory",
       client: {
@@ -35,10 +35,11 @@ describe("TaskLoop", () => {
           showToast: mockShowToastFn,
         },
       },
-    }
+    } as unknown as PluginContext
   })
 
   afterEach(() => {
+    vi.clearAllTimers()
     vi.clearAllMocks()
   })
 
@@ -80,8 +81,8 @@ describe("TaskLoop", () => {
 
       await taskLoop.handler({ event })
 
-      // Advance timers to trigger the countdown timeout
-      vi.advanceTimersByTime(0)
+      // Advance timers to trigger the countdown timeout and flush promises
+      await vi.advanceTimersByTimeAsync(100)
 
       expect(mockPromptFn).toHaveBeenCalled()
     })
@@ -173,8 +174,8 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: userMessageEvent })
 
-      // Advance timers past countdown
-      vi.advanceTimersByTime(6000)
+      // Advance timers past countdown using async version
+      await vi.advanceTimersByTimeAsync(6000)
 
       // Prompt should not be called due to countdown cancellation
       expect(mockPromptFn).not.toHaveBeenCalled()
@@ -202,8 +203,8 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: assistantMessageEvent })
 
-      // Advance timers past countdown
-      vi.advanceTimersByTime(6000)
+      // Advance timers past countdown using async version
+      await vi.advanceTimersByTimeAsync(6000)
 
       // Prompt should not be called due to countdown cancellation
       expect(mockPromptFn).not.toHaveBeenCalled()
@@ -231,7 +232,7 @@ describe("TaskLoop", () => {
     })
 
     it("should re-enable continuation after recovery completes", async () => {
-      const taskLoop = createTaskLoop(mockContext)
+      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 0 })
 
       // Mark session as recovering and then complete
       taskLoop.markRecovering("session-123")
@@ -246,6 +247,9 @@ describe("TaskLoop", () => {
       }
 
       await taskLoop.handler({ event })
+
+      // Advance timers and flush promises
+      await vi.advanceTimersByTimeAsync(100)
 
       expect(mockPromptFn).toHaveBeenCalled()
     })
@@ -276,7 +280,7 @@ describe("TaskLoop", () => {
     })
 
     it("should allow continuation after cooldown expires", async () => {
-      const taskLoop = createTaskLoop(mockContext, { errorCooldownMs: 100 })
+      const taskLoop = createTaskLoop(mockContext, { errorCooldownMs: 100, countdownSeconds: 0 })
 
       // Simulate an error
       const errorEvent: LoopEvent = {
@@ -286,7 +290,7 @@ describe("TaskLoop", () => {
       await taskLoop.handler({ event: errorEvent })
 
       // Advance timers past cooldown
-      vi.advanceTimersByTime(200)
+      await vi.advanceTimersByTimeAsync(200)
 
       const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
       mockTodoFn.mockResolvedValue({ data: todos })
@@ -298,11 +302,14 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: idleEvent })
 
+      // Advance timers and flush promises
+      await vi.advanceTimersByTimeAsync(100)
+
       expect(mockPromptFn).toHaveBeenCalled()
     })
 
     it("should clear error state on user message", async () => {
-      const taskLoop = createTaskLoop(mockContext, { errorCooldownMs: 5000 })
+      const taskLoop = createTaskLoop(mockContext, { errorCooldownMs: 5000, countdownSeconds: 0 })
 
       // Simulate an error
       const errorEvent: LoopEvent = {
@@ -330,13 +337,16 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: idleEvent })
 
+      // Advance timers and flush promises
+      await vi.advanceTimersByTimeAsync(100)
+
       expect(mockPromptFn).toHaveBeenCalled()
     })
   })
 
   describe("cleanup", () => {
     it("should cleanup session state on session.deleted", async () => {
-      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 5 })
+      const taskLoop = createTaskLoop(mockContext, { countdownSeconds: 0 })
 
       // Mark session as recovering first
       taskLoop.markRecovering("session-123")
@@ -358,6 +368,9 @@ describe("TaskLoop", () => {
         properties: { sessionID: "session-123" },
       }
       await taskLoop.handler({ event: event })
+
+      // Advance timers and flush promises
+      await vi.advanceTimersByTimeAsync(100)
 
       expect(mockPromptFn).toHaveBeenCalled()
     })
@@ -382,8 +395,8 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: deleteEvent })
 
-      // Advance timers past countdown
-      vi.advanceTimersByTime(6000)
+      // Advance timers past countdown using async version
+      await vi.advanceTimersByTimeAsync(6000)
 
       // Prompt should not be called due to cleanup
       expect(mockPromptFn).not.toHaveBeenCalled()
@@ -411,8 +424,8 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: toolEvent })
 
-      // Advance timers past countdown
-      vi.advanceTimersByTime(6000)
+      // Advance timers past countdown using async version
+      await vi.advanceTimersByTimeAsync(6000)
 
       // Prompt should not be called due to countdown cancellation
       expect(mockPromptFn).not.toHaveBeenCalled()
@@ -438,8 +451,8 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: toolEvent })
 
-      // Advance timers past countdown
-      vi.advanceTimersByTime(6000)
+      // Advance timers past countdown using async version
+      await vi.advanceTimersByTimeAsync(6000)
 
       // Prompt should not be called due to countdown cancellation
       expect(mockPromptFn).not.toHaveBeenCalled()
@@ -469,8 +482,8 @@ describe("TaskLoop", () => {
       }
       await taskLoop.handler({ event: partUpdateEvent })
 
-      // Advance timers past countdown
-      vi.advanceTimersByTime(6000)
+      // Advance timers past countdown using async version
+      await vi.advanceTimersByTimeAsync(6000)
 
       // Prompt should not be called due to countdown cancellation
       expect(mockPromptFn).not.toHaveBeenCalled()

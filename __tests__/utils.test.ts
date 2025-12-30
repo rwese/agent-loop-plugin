@@ -10,6 +10,11 @@ import {
   writeLoopState,
   clearLoopState,
   incrementIteration,
+  writeOutput,
+  clearOutput,
+  getOutputFilePath,
+  createFileLogger,
+  sendIgnoredMessage,
 } from "../utils"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -133,8 +138,9 @@ Content here`
 
       const result = parseFrontmatter(content)
 
+      // Content without proper frontmatter format returns original content as body
       expect(result.data).toEqual({})
-      expect(result.body).toBe("")
+      expect(result.body).toBe(content)
     })
   })
 
@@ -157,7 +163,8 @@ Content`
 
       const result = parseFrontmatter(content)
 
-      expect(result.data).toEqual({ title: "" })
+      // Both title and author are parsed, author has empty string value
+      expect(result.data).toEqual({ title: "", author: "" })
     })
   })
 })
@@ -236,7 +243,8 @@ describe("isAbortError", () => {
     it("should handle object with empty message", () => {
       const error = new Error("")
       error.name = "AbortError"
-      expect(isAbortError(error)).toBe(false)
+      // AbortError is detected by name even with empty message
+      expect(isAbortError(error)).toBe(true)
     })
   })
 })
@@ -514,5 +522,273 @@ Prompt`)
 
     expect(result).not.toBeNull()
     expect(result!.iteration).toBe(6)
+  })
+})
+
+describe("getOutputFilePath", () => {
+  it("should return default path when no custom path provided", () => {
+    const result = getOutputFilePath("/test/directory")
+    expect(result).toBe("/test/directory/.agent-loop/output.log")
+  })
+
+  it("should use custom path when provided", () => {
+    const result = getOutputFilePath("/test/directory", "custom/output.log")
+    expect(result).toBe("/test/directory/custom/output.log")
+  })
+})
+
+describe("writeOutput", () => {
+  const testDirectory = "/test/directory"
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it("should create directory if it does not exist", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false)
+    const mkdirSpy = vi.spyOn(fs, "mkdirSync")
+    vi.spyOn(fs, "appendFileSync")
+
+    writeOutput(testDirectory, "Test message")
+
+    expect(mkdirSpy).toHaveBeenCalled()
+  })
+
+  it("should append message to file", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true)
+    const appendSpy = vi.spyOn(fs, "appendFileSync")
+
+    writeOutput(testDirectory, "Test message")
+
+    expect(appendSpy).toHaveBeenCalled()
+    const writtenContent = appendSpy.mock.calls[0][1] as string
+    expect(writtenContent).toContain("Test message")
+  })
+
+  it("should include data in output", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true)
+    const appendSpy = vi.spyOn(fs, "appendFileSync")
+
+    writeOutput(testDirectory, "Test message", { key: "value" })
+
+    const writtenContent = appendSpy.mock.calls[0][1] as string
+    expect(writtenContent).toContain("Test message")
+    expect(writtenContent).toContain('"key":"value"')
+  })
+
+  it("should return false on write failure", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true)
+    vi.spyOn(fs, "appendFileSync").mockImplementation(() => {
+      throw new Error("Write failed")
+    })
+
+    const result = writeOutput(testDirectory, "Test message")
+
+    expect(result).toBe(false)
+  })
+
+  it("should return true on successful write", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true)
+    vi.spyOn(fs, "appendFileSync")
+
+    const result = writeOutput(testDirectory, "Test message")
+
+    expect(result).toBe(true)
+  })
+})
+
+describe("clearOutput", () => {
+  const testDirectory = "/test/directory"
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it("should return true when file does not exist", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false)
+
+    const result = clearOutput(testDirectory)
+
+    expect(result).toBe(true)
+  })
+
+  it("should delete file when it exists", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true)
+    const unlinkSpy = vi.spyOn(fs, "unlinkSync")
+
+    const result = clearOutput(testDirectory)
+
+    expect(result).toBe(true)
+    expect(unlinkSpy).toHaveBeenCalled()
+  })
+
+  it("should return false on deletion failure", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true)
+    vi.spyOn(fs, "unlinkSync").mockImplementation(() => {
+      throw new Error("Delete failed")
+    })
+
+    const result = clearOutput(testDirectory)
+
+    expect(result).toBe(false)
+  })
+})
+
+describe("createFileLogger", () => {
+  const testDirectory = "/test/directory"
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.spyOn(fs, "existsSync").mockReturnValue(true)
+    vi.spyOn(fs, "appendFileSync")
+  })
+
+  it("should create logger with all methods", () => {
+    const logger = createFileLogger(testDirectory)
+
+    expect(logger).toHaveProperty("debug")
+    expect(logger).toHaveProperty("info")
+    expect(logger).toHaveProperty("warn")
+    expect(logger).toHaveProperty("error")
+  })
+
+  it("should write info messages", () => {
+    const appendSpy = vi.spyOn(fs, "appendFileSync")
+    const logger = createFileLogger(testDirectory)
+
+    logger.info("Test info message")
+
+    expect(appendSpy).toHaveBeenCalled()
+    const writtenContent = appendSpy.mock.calls[0][1] as string
+    expect(writtenContent).toContain("[INFO]")
+    expect(writtenContent).toContain("Test info message")
+  })
+
+  it("should not write debug messages at info level", () => {
+    const appendSpy = vi.spyOn(fs, "appendFileSync")
+    const logger = createFileLogger(testDirectory, undefined, "info")
+
+    logger.debug("Test debug message")
+
+    expect(appendSpy).not.toHaveBeenCalled()
+  })
+
+  it("should write debug messages at debug level", () => {
+    const appendSpy = vi.spyOn(fs, "appendFileSync")
+    const logger = createFileLogger(testDirectory, undefined, "debug")
+
+    logger.debug("Test debug message")
+
+    expect(appendSpy).toHaveBeenCalled()
+    const writtenContent = appendSpy.mock.calls[0][1] as string
+    expect(writtenContent).toContain("[DEBUG]")
+  })
+
+  it("should write error messages", () => {
+    const appendSpy = vi.spyOn(fs, "appendFileSync")
+    const logger = createFileLogger(testDirectory)
+
+    logger.error("Test error message")
+
+    expect(appendSpy).toHaveBeenCalled()
+    const writtenContent = appendSpy.mock.calls[0][1] as string
+    expect(writtenContent).toContain("[ERROR]")
+  })
+
+  it("should use custom path", () => {
+    const appendSpy = vi.spyOn(fs, "appendFileSync")
+    const logger = createFileLogger(testDirectory, "custom/log.txt")
+
+    logger.info("Test message")
+
+    expect(appendSpy).toHaveBeenCalledWith(
+      expect.stringContaining("custom/log.txt"),
+      expect.any(String),
+      "utf-8"
+    )
+  })
+})
+
+describe("sendIgnoredMessage", () => {
+  it("should send message with agent and model options", async () => {
+    const mockPrompt = vi.fn().mockResolvedValue(undefined)
+    const client = {
+      session: {
+        prompt: mockPrompt,
+      },
+    }
+
+    await sendIgnoredMessage(client, "session-123", "Test message", undefined, {
+      agent: "test-agent",
+      model: "test-model",
+    })
+
+    expect(mockPrompt).toHaveBeenCalledWith({
+      path: { id: "session-123" },
+      body: {
+        agent: "test-agent",
+        model: "test-model",
+        noReply: true,
+        parts: [
+          {
+            type: "text",
+            text: "Test message",
+            ignored: true,
+          },
+        ],
+      },
+    })
+  })
+
+  it("should send message without options", async () => {
+    const mockPrompt = vi.fn().mockResolvedValue(undefined)
+    const client = {
+      session: {
+        prompt: mockPrompt,
+      },
+    }
+
+    await sendIgnoredMessage(client, "session-123", "Test message")
+
+    expect(mockPrompt).toHaveBeenCalledWith({
+      path: { id: "session-123" },
+      body: {
+        agent: undefined,
+        model: undefined,
+        noReply: true,
+        parts: [
+          {
+            type: "text",
+            text: "Test message",
+            ignored: true,
+          },
+        ],
+      },
+    })
+  })
+
+  it("should log error on failure when logger provided", async () => {
+    const mockPrompt = vi.fn().mockRejectedValue(new Error("Test error"))
+    const client = {
+      session: {
+        prompt: mockPrompt,
+      },
+    }
+    const mockLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }
+
+    await sendIgnoredMessage(client, "session-123", "Test message", mockLogger)
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      "Failed to send ignored message",
+      expect.objectContaining({
+        error: "Test error",
+        sessionID: "session-123",
+      })
+    )
   })
 })

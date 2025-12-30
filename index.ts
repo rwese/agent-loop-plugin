@@ -40,12 +40,18 @@ export {
   isAbortError,
   log,
   createLogger,
+  createFileLogger,
   readLoopState,
   writeLoopState,
   clearLoopState,
   incrementIteration,
   sendIgnoredMessage,
+  writeOutput,
+  clearOutput,
+  getOutputFilePath,
 } from "./utils.js"
+
+export type { SendIgnoredMessageOptions } from "./utils.js"
 
 /**
  * Usage Example:

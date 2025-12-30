@@ -22,6 +22,7 @@ import {
   clearLoopState,
   incrementIteration,
   sendIgnoredMessage,
+  writeOutput,
 } from "./utils.js"
 
 const DEFAULT_MAX_ITERATIONS = 100
@@ -95,19 +96,30 @@ export function createIterationLoop(
     stateFilePath,
     logger: customLogger,
     logLevel = "info",
+    agent,
+    model,
+    outputFilePath,
   } = options
 
   const logger: Logger = createLogger(customLogger, logLevel)
   const sessions = new Map<string, SessionState>()
   const isDebug = logLevel === "debug"
 
+  // Helper to write to output file if configured
+  function logToFile(message: string, data?: Record<string, unknown>): void {
+    if (outputFilePath) {
+      writeOutput(ctx.directory, message, data, outputFilePath)
+    }
+  }
+
   // Show debug toast on initialization
   if (isDebug) {
+    const loadedAt = new Date().toLocaleTimeString()
     ctx.client.tui
       .showToast({
         body: {
           title: "Iteration Loop",
-          message: "Plugin initialized (debug mode)",
+          message: `Plugin loaded at ${loadedAt} (debug mode)`,
           variant: "info",
           duration: 2000,
         },
@@ -143,7 +155,7 @@ export function createIterationLoop(
   }
 
   async function showStatusMessage(sessionID: string, message: string): Promise<void> {
-    await sendIgnoredMessage(ctx.client, sessionID, message, logger)
+    await sendIgnoredMessage(ctx.client, sessionID, message, logger, { agent, model })
   }
 
   const startLoop = (
@@ -164,6 +176,11 @@ export function createIterationLoop(
     const success = writeLoopState(ctx.directory, state, stateFilePath)
     if (success) {
       logger.info(`Starting iteration 1 of ${state.max_iterations}`, {
+        sessionID,
+        maxIterations: state.max_iterations,
+        completionMarker: state.completion_marker,
+      })
+      logToFile(`Starting iteration 1 of ${state.max_iterations}`, {
         sessionID,
         maxIterations: state.max_iterations,
         completionMarker: state.completion_marker,
@@ -232,6 +249,14 @@ export function createIterationLoop(
             marker: state.completion_marker,
           }
         )
+        logToFile(
+          `Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
+          {
+            sessionID,
+            iteration: state.iteration,
+            marker: state.completion_marker,
+          }
+        )
         clearLoopState(ctx.directory, stateFilePath)
 
         await ctx.client.tui
@@ -251,6 +276,11 @@ export function createIterationLoop(
       // Check max iterations
       if (state.iteration >= state.max_iterations) {
         logger.warn("Max iterations reached without completion", {
+          sessionID,
+          iteration: state.iteration,
+          max: state.max_iterations,
+        })
+        logToFile("Max iterations reached without completion", {
           sessionID,
           iteration: state.iteration,
           max: state.max_iterations,
@@ -283,6 +313,11 @@ export function createIterationLoop(
         iteration: newState.iteration,
         max: newState.max_iterations,
       })
+      logToFile(`Starting iteration ${newState.iteration} of ${newState.max_iterations}`, {
+        sessionID,
+        iteration: newState.iteration,
+        max: newState.max_iterations,
+      })
 
       const continuationPrompt = CONTINUATION_PROMPT.replace(
         "{{ITERATION}}",
@@ -307,12 +342,18 @@ export function createIterationLoop(
         await ctx.client.session.prompt({
           path: { id: sessionID },
           body: {
+            agent,
+            model,
             parts: [{ type: "text", text: continuationPrompt }],
           },
           query: { directory: ctx.directory },
         })
       } catch (err) {
         logger.error("Failed to inject continuation prompt", {
+          sessionID,
+          error: String(err),
+        })
+        logToFile("Failed to inject continuation prompt", {
           sessionID,
           error: String(err),
         })

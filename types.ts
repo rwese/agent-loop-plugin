@@ -17,6 +17,7 @@ export interface PluginContext {
         path: { id: string }
         body: {
           agent?: string
+          model?: string
           noReply?: boolean
           parts: Array<{ type: string; text: string; ignored?: boolean }>
         }
@@ -100,6 +101,15 @@ export interface IterationLoopOptions {
 
   /** Log level for filtering output (defaults to 'info') */
   logLevel?: LogLevel
+
+  /** Agent to use for continuation prompts */
+  agent?: string
+
+  /** Model to use for continuation prompts */
+  model?: string
+
+  /** File path to write loop output/logs (relative to directory) */
+  outputFilePath?: string
 }
 
 /**
@@ -135,4 +145,13 @@ export interface TaskLoopOptions {
 
   /** Log level for filtering output (defaults to 'info') */
   logLevel?: LogLevel
+
+  /** Agent to use for continuation prompts */
+  agent?: string
+
+  /** Model to use for continuation prompts */
+  model?: string
+
+  /** File path to write loop output/logs (relative to directory) */
+  outputFilePath?: string
 }

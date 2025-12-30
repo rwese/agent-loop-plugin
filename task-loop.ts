@@ -7,7 +7,7 @@
  */
 
 import type { PluginContext, Todo, LoopEvent, TaskLoopOptions, Logger } from "./types.js"
-import { isAbortError, createLogger, sendIgnoredMessage } from "./utils.js"
+import { isAbortError, createLogger, sendIgnoredMessage, writeOutput } from "./utils.js"
 
 const CONTINUATION_PROMPT = `[SYSTEM REMINDER - TASK CONTINUATION]
 
@@ -59,19 +59,30 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     toastDurationMs = 900,
     logger: customLogger,
     logLevel = "info",
+    agent,
+    model,
+    outputFilePath,
   } = options
 
   const logger: Logger = createLogger(customLogger, logLevel)
   const sessions = new Map<string, SessionState>()
   const isDebug = logLevel === "debug"
 
+  // Helper to write to output file if configured
+  function logToFile(message: string, data?: Record<string, unknown>): void {
+    if (outputFilePath) {
+      writeOutput(ctx.directory, message, data, outputFilePath)
+    }
+  }
+
   // Show debug toast on initialization
   if (isDebug) {
+    const loadedAt = new Date().toLocaleTimeString()
     ctx.client.tui
       .showToast({
         body: {
           title: "Task Loop",
-          message: "Plugin initialized (debug mode)",
+          message: `Plugin loaded at ${loadedAt} (debug mode)`,
           variant: "info",
           duration: 2000,
         },
@@ -136,7 +147,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   }
 
   async function showStatusMessage(sessionID: string, message: string): Promise<void> {
-    await sendIgnoredMessage(ctx.client, sessionID, message, logger)
+    await sendIgnoredMessage(ctx.client, sessionID, message, logger, { agent, model })
   }
 
   function getIncompleteCount(todos: Todo[]): number {
@@ -192,18 +203,30 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         incompleteCount: freshIncompleteCount,
         totalTasks: total,
       })
+      logToFile(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, {
+        sessionID,
+        incompleteCount: freshIncompleteCount,
+        totalTasks: total,
+      })
 
       await ctx.client.session.prompt({
         path: { id: sessionID },
         body: {
+          agent,
+          model,
           parts: [{ type: "text", text: prompt }],
         },
         query: { directory: ctx.directory },
       })
 
       logger.info("Continuation prompt injected successfully", { sessionID })
+      logToFile("Continuation prompt injected successfully", { sessionID })
     } catch (err) {
       logger.error("Failed to inject continuation prompt", {
+        sessionID,
+        error: String(err),
+      })
+      logToFile("Failed to inject continuation prompt", {
         sessionID,
         error: String(err),
       })
