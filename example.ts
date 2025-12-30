@@ -4,8 +4,8 @@
  * This demonstrates both loop mechanisms working together.
  */
 
-import { createTaskLoop, createIterationLoop } from "./index"
-import type { PluginContext } from "./index"
+import { createTaskLoop, createIterationLoop } from "./index.js"
+import type { PluginContext } from "./index.js"
 
 /**
  * Example OpenCode plugin using agent loops

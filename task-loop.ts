@@ -6,8 +6,8 @@
  * to keep the agent working until all tasks are complete.
  */
 
-import type { PluginContext, Todo, LoopEvent, TaskLoopOptions } from "./types"
-import { isAbortError, log } from "./utils"
+import type { PluginContext, Todo, LoopEvent, TaskLoopOptions } from "./types.js"
+import { isAbortError, log } from "./utils.js"
 
 const HOOK_NAME = "task-loop"
 
@@ -121,8 +121,8 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
   async function injectContinuation(
     sessionID: string,
-    incompleteCount: number,
-    total: number
+    _incompleteCount: number,
+    _total: number
   ): Promise<void> {
     const state = sessions.get(sessionID)
 

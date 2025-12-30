@@ -27,3 +27,7 @@ Thumbs.db
 
 # State files (examples)
 .sisyphus/
+.agent-loop/
+
+# npm pack output
+*.tgz

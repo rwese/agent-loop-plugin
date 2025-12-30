@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
-import type { IterationLoopState } from "./types"
+import type { IterationLoopState } from "./types.js"
 
 /**
  * Simple frontmatter parser for loop state files

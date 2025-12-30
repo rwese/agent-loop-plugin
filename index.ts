@@ -23,15 +23,15 @@ export type {
   IterationLoopState,
   IterationLoopOptions,
   TaskLoopOptions,
-} from "./types"
+} from "./types.js"
 
 // Export Task Loop
-export { createTaskLoop } from "./task-loop"
-export type { TaskLoop } from "./task-loop"
+export { createTaskLoop } from "./task-loop.js"
+export type { TaskLoop } from "./task-loop.js"
 
 // Export Iteration Loop
-export { createIterationLoop } from "./iteration-loop"
-export type { IterationLoop } from "./iteration-loop"
+export { createIterationLoop } from "./iteration-loop.js"
+export type { IterationLoop } from "./iteration-loop.js"
 
 // Export utilities
 export {
@@ -41,7 +41,7 @@ export {
   writeLoopState,
   clearLoopState,
   incrementIteration,
-} from "./utils"
+} from "./utils.js"
 
 /**
  * Usage Example:
