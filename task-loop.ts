@@ -65,7 +65,19 @@ interface SessionState {
   isRecovering?: boolean
   /** When true, completion message has been shown (prevents duplicates) */
   completionShown?: boolean
+  /** When true, countdown is being started (prevents race conditions) */
+  countdownStarting?: boolean
+  /** Debug ID for tracking state instances */
+  _id?: number
 }
+
+/**
+ * Module-level session state storage.
+ * Shared across all TaskLoop instances to prevent duplicate countdowns
+ * when the plugin is loaded multiple times.
+ */
+const globalSessions = new Map<string, SessionState>()
+let globalStateCounter = 0
 
 /**
  * Task Loop public interface.
@@ -124,8 +136,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   } = options
 
   const logger: Logger = createLogger(customLogger, logLevel)
-  const sessions = new Map<string, SessionState>()
   const isDebug = logLevel === "debug"
+
+  // Use module-level sessions map to share state across instances
+  const sessions = globalSessions
 
   // Helper to write to output file if configured
   function logToFile(message: string, data?: Record<string, unknown>): void {
@@ -156,7 +170,8 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   function getState(sessionID: string): SessionState {
     let state = sessions.get(sessionID)
     if (!state) {
-      state = {}
+      globalStateCounter++
+      state = { _id: globalStateCounter }
       sessions.set(sessionID, state)
     }
     return state
@@ -166,9 +181,12 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
    * Cancel any pending countdown for a session.
    * Clears both the timer (for injection) and interval (for toast updates).
    */
-  function cancelCountdown(sessionID: string): void {
+  function cancelCountdown(sessionID: string, reason?: string): void {
     const state = sessions.get(sessionID)
     if (!state) return
+
+    const hadTimer = !!state.countdownTimer
+    const hadInterval = !!state.countdownInterval
 
     if (state.countdownTimer) {
       clearTimeout(state.countdownTimer)
@@ -178,6 +196,16 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       clearInterval(state.countdownInterval)
       state.countdownInterval = undefined
     }
+    state.countdownStarting = false
+
+    if (hadTimer || hadInterval) {
+      logger.debug("[cancelCountdown] Countdown cancelled", {
+        sessionID,
+        reason: reason ?? "unknown",
+        hadTimer,
+        hadInterval,
+      })
+    }
   }
 
   /**
@@ -185,7 +213,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
    * Cancels timers and removes from memory map.
    */
   function cleanup(sessionID: string): void {
-    cancelCountdown(sessionID)
+    cancelCountdown(sessionID, "cleanup")
     sessions.delete(sessionID)
   }
 
@@ -196,7 +224,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   const markRecovering = (sessionID: string): void => {
     const state = getState(sessionID)
     state.isRecovering = true
-    cancelCountdown(sessionID)
+    cancelCountdown(sessionID, "markRecovering")
     logger.debug("Skipping: session in recovery mode", { sessionID })
   }
 
@@ -354,7 +382,20 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
    */
   function startCountdown(sessionID: string, incompleteCount: number, total: number): void {
     const state = getState(sessionID)
-    cancelCountdown(sessionID) // Cancel any existing countdown
+
+    // Skip if countdown already active or being started - don't reset it
+    if (state.countdownTimer || state.countdownStarting) {
+      logger.debug("[startCountdown] Countdown already active, skipping", { sessionID })
+      return
+    }
+
+    // Mark as starting to prevent race conditions
+    state.countdownStarting = true
+    logger.debug("[startCountdown] Starting countdown for task continuation...", {
+      sessionID,
+      seconds: countdownSeconds,
+      incompleteCount,
+    })
 
     let secondsRemaining = countdownSeconds
     showCountdownToast(secondsRemaining, incompleteCount)
@@ -374,15 +415,9 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         incompleteCount,
         total,
       })
-      cancelCountdown(sessionID)
+      cancelCountdown(sessionID, "countdown-complete")
       injectContinuation(sessionID, incompleteCount, total)
     }, countdownSeconds * 1000)
-
-    logger.debug("[startCountdown] Starting countdown for task continuation...", {
-      sessionID,
-      seconds: countdownSeconds,
-      incompleteCount,
-    })
   }
 
   /**
@@ -404,7 +439,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
       const state = getState(sessionID)
       state.lastErrorAt = Date.now()
-      cancelCountdown(sessionID)
+      cancelCountdown(sessionID, "session-error")
 
       logger.debug("[session.error] Session error detected", {
         sessionID,
@@ -488,10 +523,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         if (state) {
           state.lastErrorAt = undefined
           if (state.countdownTimer) {
-            cancelCountdown(sessionID)
-            logger.debug("[message.updated] Countdown cancelled: user activity detected", {
-              sessionID,
-            })
+            cancelCountdown(sessionID, "user-message")
           }
         }
       }
