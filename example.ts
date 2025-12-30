@@ -279,3 +279,117 @@ export function example7_GracefulShutdown(ctx: PluginContext) {
 
   return { plugin, cleanup }
 }
+
+/**
+ * Example 8: User-initiated iteration loop via prompt tag
+ *
+ * Users can embed <iterationLoop> tags directly in their prompts.
+ * The tag is stripped before reaching the AI, and the loop is started automatically.
+ */
+export function example8_PromptTagTrigger(ctx: PluginContext) {
+  const plugin = examplePlugin(ctx)
+
+  // Simulate prompt interception (in real plugin, use ctx.on("prompt.before", ...))
+  const handleUserPrompt = async (sessionID: string, userPrompt: string) => {
+    // Process the prompt for iteration loop tags
+    const result = plugin.loops.iteration.processPrompt(sessionID, userPrompt)
+
+    if (result.shouldIntercept) {
+      // Tag was found - send the modified prompt instead
+      console.log("Iteration loop started from prompt tag")
+      console.log("Modified prompt:", result.modifiedPrompt)
+
+      // In real plugin, you would send result.modifiedPrompt to the AI
+      // await ctx.client.session.prompt({ ... body: { parts: [{ type: "text", text: result.modifiedPrompt }] } })
+    } else {
+      // No tag found - send original prompt
+      console.log("No iteration tag found, sending original prompt")
+    }
+
+    return result
+  }
+
+  // Example usage:
+  // User types: "<iterationLoop max="20" marker="API_DONE">Build a REST API</iterationLoop>"
+  // Result: Loop starts, AI receives formatted prompt with iteration context
+
+  return { plugin, handleUserPrompt }
+}
+
+/**
+ * Example 9: Full plugin with prompt tag integration
+ *
+ * Complete example showing how to wire up prompt tag processing
+ * in an OpenCode plugin.
+ */
+export function example9_FullPluginWithPromptTags(
+  ctx: PluginContext & {
+    on: (
+      event: string,
+      handler: (arg: {
+        sessionID: string
+        prompt: string
+        setPrompt: (newPrompt: string) => void
+      }) => void
+    ) => void
+  }
+) {
+  const plugin = examplePlugin(ctx)
+
+  // Wire event handler for loop continuation
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx.on("event", plugin.handleEvent as any)
+
+  // Wire prompt interception for tag parsing
+  ctx.on("prompt.before", (event) => {
+    const result = plugin.loops.iteration.processPrompt(event.sessionID, event.prompt)
+
+    if (result.shouldIntercept) {
+      // Replace prompt with iteration-aware version
+      event.setPrompt(result.modifiedPrompt)
+    }
+  })
+
+  return plugin
+}
+
+/**
+ * Example prompt tag syntax:
+ *
+ * Basic:
+ * ```
+ * <iterationLoop>
+ * Build a complete REST API with authentication
+ * </iterationLoop>
+ * ```
+ *
+ * With max iterations:
+ * ```
+ * <iterationLoop max="20">
+ * Refactor the database layer
+ * </iterationLoop>
+ * ```
+ *
+ * With custom completion marker:
+ * ```
+ * <iterationLoop max="15" marker="DEPLOYED">
+ * Deploy application to production
+ * </iterationLoop>
+ * ```
+ *
+ * Self-closing (task in attribute):
+ * ```
+ * <iterationLoop task="Fix all linting errors" max="10" marker="LINT_CLEAN" />
+ * ```
+ *
+ * Mixed with other content (tag is stripped, content preserved):
+ * ```
+ * Please help me with this:
+ *
+ * <iterationLoop max="20" marker="COMPLETE">
+ * Build a REST API with full test coverage
+ * </iterationLoop>
+ *
+ * Make sure to follow best practices!
+ * ```
+ */

@@ -63,6 +63,28 @@ Husky runs `lint-staged` which formats staged files with Prettier.
 - **Type-safe** - Full TypeScript types for all public APIs
 - **Node 18+** required
 
+## Versioning
+
+Use npm scripts for semver versioning:
+
+```bash
+npm run version:patch  # 1.0.0 -> 1.0.1 (bug fixes)
+npm run version:minor  # 1.0.0 -> 1.1.0 (new features, backward compatible)
+npm run version:major  # 1.0.0 -> 2.0.0 (breaking changes)
+```
+
+These scripts will:
+
+1. Bump version in package.json
+2. Commit the change with message "chore: bump version to X.Y.Z"
+3. Create a git tag `vX.Y.Z`
+
+After versioning, push with tags:
+
+```bash
+git push && git push --tags
+```
+
 ## Event Types
 
 The loops respond to these OpenCode events:

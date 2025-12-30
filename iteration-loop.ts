@@ -24,6 +24,7 @@ import {
   sendIgnoredMessage,
   writeOutput,
 } from "./utils.js"
+import { parseIterationLoopTag, buildIterationStartPrompt } from "./prompt-parser.js"
 
 const DEFAULT_MAX_ITERATIONS = 100
 const DEFAULT_COMPLETION_MARKER = "DONE"
@@ -45,6 +46,16 @@ interface SessionState {
   isRecovering?: boolean
 }
 
+/**
+ * Result of processing a prompt for iteration loop tags
+ */
+export interface ProcessPromptResult {
+  /** Whether an iteration loop tag was found and loop was started */
+  shouldIntercept: boolean
+  /** The modified prompt to send to the AI (with tag stripped, context added) */
+  modifiedPrompt: string
+}
+
 export interface IterationLoop {
   /** Event handler to wire into plugin event system */
   handler: (input: { event: LoopEvent }) => Promise<void>
@@ -61,6 +72,33 @@ export interface IterationLoop {
 
   /** Get current loop state */
   getState: () => IterationLoopState | null
+
+  /**
+   * Process a user prompt, detecting and handling iteration loop tags.
+   *
+   * If an <iterationLoop> tag is found:
+   * 1. Extracts task, max iterations, and marker from the tag
+   * 2. Starts the iteration loop
+   * 3. Returns a modified prompt with the tag stripped and iteration context added
+   *
+   * @param sessionID - The session ID to start the loop for
+   * @param prompt - The raw user prompt that may contain an iteration loop tag
+   * @returns Result indicating whether to intercept and the modified prompt
+   *
+   * @example
+   * ```typescript
+   * const result = iterationLoop.processPrompt(sessionID, `
+   *   <iterationLoop max="20" marker="DONE">
+   *   Build a REST API
+   *   </iterationLoop>
+   * `);
+   *
+   * if (result.shouldIntercept) {
+   *   // Send result.modifiedPrompt to AI instead of original
+   * }
+   * ```
+   */
+  processPrompt: (sessionID: string, prompt: string) => ProcessPromptResult
 }
 
 /**
@@ -408,10 +446,50 @@ export function createIterationLoop(
     }
   }
 
+  const processPrompt = (sessionID: string, prompt: string): ProcessPromptResult => {
+    const parsed = parseIterationLoopTag(prompt)
+
+    if (!parsed.found || !parsed.task) {
+      return { shouldIntercept: false, modifiedPrompt: prompt }
+    }
+
+    const maxIterations = parsed.maxIterations ?? defaultMaxIterations
+    const marker = parsed.marker ?? defaultCompletionMarker
+
+    // Start the loop
+    const success = startLoop(sessionID, parsed.task, {
+      maxIterations,
+      completionMarker: marker,
+    })
+
+    if (!success) {
+      logger.error("Failed to start iteration loop from prompt tag", { sessionID })
+      return { shouldIntercept: false, modifiedPrompt: prompt }
+    }
+
+    // Build the modified prompt
+    const modifiedPrompt = buildIterationStartPrompt(
+      parsed.task,
+      maxIterations,
+      marker,
+      parsed.cleanedPrompt
+    )
+
+    logger.info("Iteration loop started from prompt tag", {
+      sessionID,
+      task: parsed.task,
+      maxIterations,
+      marker,
+    })
+
+    return { shouldIntercept: true, modifiedPrompt }
+  }
+
   return {
     handler,
     startLoop,
     cancelLoop,
     getState,
+    processPrompt,
   }
 }

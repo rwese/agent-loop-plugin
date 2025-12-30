@@ -33,7 +33,11 @@ export type { TaskLoop } from "./task-loop.js"
 
 // Export Iteration Loop
 export { createIterationLoop } from "./iteration-loop.js"
-export type { IterationLoop } from "./iteration-loop.js"
+export type { IterationLoop, ProcessPromptResult } from "./iteration-loop.js"
+
+// Export Prompt Parser
+export { parseIterationLoopTag, buildIterationStartPrompt } from "./prompt-parser.js"
+export type { IterationLoopTagResult } from "./prompt-parser.js"
 
 // Export utilities
 export {
