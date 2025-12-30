@@ -206,7 +206,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     const state = sessions.get(sessionID)
     if (state) {
       state.isRecovering = false
-      logger.debug("Session recovery complete", { sessionID })
+      logger.debug("[markRecoveryComplete] Session recovery complete", { sessionID })
     }
   }
 
@@ -259,12 +259,12 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     const state = sessions.get(sessionID)
 
     if (state?.isRecovering) {
-      logger.debug("Skipping: session in recovery mode", { sessionID })
+      logger.debug("[injectContinuation] Skipping: session in recovery mode", { sessionID })
       return
     }
 
     if (state?.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) {
-      logger.debug("Skipping: recent error (cooldown active)", { sessionID })
+      logger.debug("[injectContinuation] Skipping: recent error (cooldown active)", { sessionID })
       return
     }
 
@@ -275,7 +275,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       })
       todos = Array.isArray(response) ? response : (response.data ?? [])
     } catch (err) {
-      logger.error("Failed to fetch todos", {
+      logger.error("[injectContinuation] Failed to fetch todos", {
         sessionID,
         error: String(err),
       })
@@ -284,7 +284,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
     const freshIncompleteCount = getIncompleteCount(todos)
     if (freshIncompleteCount === 0) {
-      logger.debug("Skipping: no incomplete todos", {
+      logger.debug("[injectContinuation] Skipping: no incomplete todos", {
         sessionID,
       })
       return
@@ -364,7 +364,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       injectContinuation(sessionID, incompleteCount, total)
     }, countdownSeconds * 1000)
 
-    logger.debug("Starting countdown for task continuation...", {
+    logger.debug("[startCountdown] Starting countdown for task continuation...", {
       sessionID,
       seconds: countdownSeconds,
       incompleteCount,
@@ -392,7 +392,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       state.lastErrorAt = Date.now()
       cancelCountdown(sessionID)
 
-      logger.debug("Session error detected", {
+      logger.debug("[session.error] Session error detected", {
         sessionID,
         isAbort: isAbortError(props?.error),
       })
@@ -404,12 +404,17 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       const sessionID = props?.sessionID
       if (!sessionID) return
 
-      logger.debug("Session idle detected", { sessionID })
+      logger.debug("[session.idle] Session idle detected", { sessionID })
 
       const state = getState(sessionID)
 
       if (state.isRecovering) {
-        logger.debug("Skipping: session in recovery mode", { sessionID })
+        logger.debug("[session.idle] Skipping: session in recovery mode", { sessionID })
+        return
+      }
+
+      if (state.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) {
+        logger.debug("[session.idle] Skipping: recent error (cooldown active)", { sessionID })
         return
       }
 
@@ -425,7 +430,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         })
         todos = Array.isArray(response) ? response : (response.data ?? [])
       } catch (err) {
-        logger.error("Failed to fetch todos", {
+        logger.error("[session.idle] Failed to fetch todos", {
           sessionID,
           error: String(err),
         })
@@ -433,13 +438,13 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       }
 
       if (!todos || todos.length === 0) {
-        logger.debug("No todos found", { sessionID })
+        logger.debug("[session.idle] No todos found", { sessionID })
         return
       }
 
       const incompleteCount = getIncompleteCount(todos)
       if (incompleteCount === 0) {
-        logger.info("All todos complete", {
+        logger.info("[session.idle] All todos complete", {
           sessionID,
           total: todos.length,
         })
@@ -468,7 +473,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
           state.lastErrorAt = undefined
           if (state.countdownTimer) {
             cancelCountdown(sessionID)
-            logger.debug("Countdown cancelled: user activity detected", {
+            logger.debug("[message.updated] Countdown cancelled: user activity detected", {
               sessionID,
             })
           }
@@ -482,7 +487,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       const sessionInfo = props?.info
       if (sessionInfo?.id) {
         cleanup(sessionInfo.id)
-        logger.debug("Session deleted: cleaned up", {
+        logger.debug("[session.deleted] Session deleted: cleaned up", {
           sessionID: sessionInfo.id,
         })
       }

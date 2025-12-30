@@ -364,7 +364,7 @@ export function createIterationLoop(
 
       const sessionState = getSessionState(sessionID)
       if (sessionState.isRecovering) {
-        logger.debug("Skipping: session in recovery mode", { sessionID })
+        logger.debug("[session.idle] Skipping: session in recovery mode", { sessionID })
         return
       }
 
@@ -380,14 +380,14 @@ export function createIterationLoop(
       const transcriptPath = props?.transcriptPath as string | undefined
 
       // Check for completion
-      logger.debug("Checking for completion marker...", {
+      logger.debug("[session.idle] Checking for completion marker...", {
         sessionID,
         marker: state.completion_marker,
       })
 
       if (detectCompletionMarker(transcriptPath, state.completion_marker)) {
         logger.info(
-          `Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
+          `[session.idle] Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
           {
             sessionID,
             iteration: state.iteration,
@@ -424,7 +424,7 @@ export function createIterationLoop(
 
       // Check max iterations
       if (state.iteration >= state.max_iterations) {
-        logger.warn("Max iterations reached without completion", {
+        logger.warn("[session.idle] Max iterations reached without completion", {
           sessionID,
           iteration: state.iteration,
           max: state.max_iterations,
@@ -457,15 +457,18 @@ export function createIterationLoop(
       // Increment and continue
       const newState = incrementIteration(ctx.directory, stateFilePath)
       if (!newState) {
-        logger.error("Failed to increment iteration", { sessionID })
+        logger.error("[session.idle] Failed to increment iteration", { sessionID })
         return
       }
 
-      logger.info(`Starting iteration ${newState.iteration} of ${newState.max_iterations}`, {
-        sessionID,
-        iteration: newState.iteration,
-        max: newState.max_iterations,
-      })
+      logger.info(
+        `[session.idle] Starting iteration ${newState.iteration} of ${newState.max_iterations}`,
+        {
+          sessionID,
+          iteration: newState.iteration,
+          max: newState.max_iterations,
+        }
+      )
       logToFile(`Starting iteration ${newState.iteration} of ${newState.max_iterations}`, {
         sessionID,
         iteration: newState.iteration,
@@ -506,7 +509,7 @@ export function createIterationLoop(
           `🔄 Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Continue until <completion>${newState.completion_marker}</completion>`
         )
       } catch (err) {
-        logger.error("Failed to inject continuation prompt", {
+        logger.error("[session.idle] Failed to inject continuation prompt", {
           sessionID,
           error: String(err),
         })
@@ -524,7 +527,7 @@ export function createIterationLoop(
         const state = readLoopState(ctx.directory, stateFilePath)
         if (state?.session_id === sessionInfo.id) {
           clearLoopState(ctx.directory, stateFilePath)
-          logger.debug("Session deleted, loop cleared", {
+          logger.debug("[session.deleted] Session deleted, loop cleared", {
             sessionID: sessionInfo.id,
           })
         }
@@ -536,6 +539,9 @@ export function createIterationLoop(
     if (event.type === "session.error") {
       const sessionID = props?.sessionID
       if (sessionID) {
+        logger.debug("[session.error] Session error detected, entering recovery mode", {
+          sessionID,
+        })
         const sessionState = getSessionState(sessionID)
         sessionState.isRecovering = true
         setTimeout(() => {
