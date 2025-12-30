@@ -103,7 +103,10 @@ describe("TaskLoop", () => {
 
       await taskLoop.handler({ event })
 
-      expect(mockPromptFn).not.toHaveBeenCalled()
+      // Should only call with status message (noReply: true), not continuation prompt
+      const calls = mockPromptFn.mock.calls
+      const continuationCalls = calls.filter((call: any) => !call[0]?.body?.noReply)
+      expect(continuationCalls).toHaveLength(0)
     })
 
     it("should not inject continuation when no todos exist", async () => {

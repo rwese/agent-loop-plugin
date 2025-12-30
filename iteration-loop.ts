@@ -185,6 +185,10 @@ export function createIterationLoop(
         maxIterations: state.max_iterations,
         completionMarker: state.completion_marker,
       })
+      showStatusMessage(
+        sessionID,
+        `🔄 Iteration Loop: Started (1/${state.max_iterations}) - Looking for <completion>${state.completion_marker}</completion>`
+      )
     }
     return success
   }
@@ -201,6 +205,10 @@ export function createIterationLoop(
         sessionID,
         iteration: state.iteration,
       })
+      showStatusMessage(
+        sessionID,
+        `🛑 Iteration Loop: Cancelled at iteration ${state.iteration}/${state.max_iterations}`
+      )
     }
     return success
   }
@@ -270,6 +278,10 @@ export function createIterationLoop(
           })
           .catch(() => {})
 
+        await showStatusMessage(
+          sessionID,
+          `🎉 Iteration Loop: Complete! Finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`
+        )
         return
       }
 
@@ -298,6 +310,10 @@ export function createIterationLoop(
           })
           .catch(() => {})
 
+        await showStatusMessage(
+          sessionID,
+          `⚠️ Iteration Loop: Stopped - Max iterations (${state.max_iterations}) reached without completion marker`
+        )
         return
       }
 
@@ -348,6 +364,10 @@ export function createIterationLoop(
           },
           query: { directory: ctx.directory },
         })
+        await showStatusMessage(
+          sessionID,
+          `🔄 Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Continue until <completion>${newState.completion_marker}</completion>`
+        )
       } catch (err) {
         logger.error("Failed to inject continuation prompt", {
           sessionID,

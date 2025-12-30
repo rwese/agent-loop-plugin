@@ -11,8 +11,6 @@ import type { PluginContext } from "./index.js"
  * Example OpenCode plugin using agent loops
  */
 export default function examplePlugin(ctx: PluginContext) {
-  console.log("Initializing Agent Loop Plugin")
-
   // ===== 1. Create Task Loop =====
   const taskLoop = createTaskLoop(ctx, {
     countdownSeconds: 3,
@@ -54,7 +52,6 @@ export default function examplePlugin(ctx: PluginContext) {
       task: string,
       options?: { maxIterations?: number; completionMarker?: string }
     ) => {
-      console.log(`Starting Iteration Loop: ${task}`)
       return iterationLoop.startLoop(sessionID, task, options)
     },
 
@@ -62,7 +59,6 @@ export default function examplePlugin(ctx: PluginContext) {
      * Cancel active Iteration Loop
      */
     cancelIterationLoop: (sessionID: string) => {
-      console.log(`Cancelling Iteration Loop`)
       return iterationLoop.cancelLoop(sessionID)
     },
 
@@ -77,7 +73,6 @@ export default function examplePlugin(ctx: PluginContext) {
      * Pause Task Loop during error recovery
      */
     pauseTaskLoop: (sessionID: string) => {
-      console.log(`Pausing Task Loop for recovery`)
       taskLoop.markRecovering(sessionID)
     },
 
@@ -85,7 +80,6 @@ export default function examplePlugin(ctx: PluginContext) {
      * Resume Task Loop after recovery
      */
     resumeTaskLoop: (sessionID: string) => {
-      console.log(`Resuming Task Loop`)
       taskLoop.markRecoveryComplete(sessionID)
     },
 
@@ -93,7 +87,6 @@ export default function examplePlugin(ctx: PluginContext) {
      * Clean up Task Loop session state
      */
     cleanupTaskLoop: (sessionID: string) => {
-      console.log(`Cleaning up Task Loop session`)
       taskLoop.cleanup(sessionID)
     },
 
@@ -228,15 +221,10 @@ export function example5_MonitoringProgress(ctx: PluginContext) {
   setInterval(() => {
     const state = plugin.getIterationLoopState()
     if (state) {
-      console.log(
-        `Progress: ${state.iteration}/${state.max_iterations} (${Math.round(
-          (state.iteration / state.max_iterations) * 100
-        )}%)`
-      )
-
+      // Progress: state.iteration / state.max_iterations
       // Warning at 90%
       if (state.iteration / state.max_iterations > 0.9) {
-        console.warn("Approaching max iterations!")
+        // Approaching max iterations
       }
     }
   }, 5000)
@@ -280,15 +268,11 @@ export function example7_GracefulShutdown(ctx: PluginContext) {
 
   // Cleanup on shutdown
   const cleanup = (sessionID: string) => {
-    console.log("Shutting down agent loops")
-
     // Clean up task loop state
     plugin.cleanupTaskLoop(sessionID)
 
     // Cancel any active iteration loops
     plugin.cancelIterationLoop(sessionID)
-
-    console.log("Cleanup complete")
   }
 
   // In real plugin: ctx.on("shutdown", cleanup);

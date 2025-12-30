@@ -290,7 +290,10 @@ Prompt`
 
       expect(mockUnlinkSync).toHaveBeenCalled()
       expect(mockShowToastFn).toHaveBeenCalled()
-      expect(mockPromptFn).not.toHaveBeenCalled()
+      // Should only call with status message (noReply: true), not continuation prompt
+      const calls = mockPromptFn.mock.calls
+      const continuationCalls = calls.filter((call: any) => !call[0]?.body?.noReply)
+      expect(continuationCalls).toHaveLength(0)
     })
 
     it("should stop loop at max iterations", async () => {
@@ -316,7 +319,10 @@ Prompt`)
 
       expect(mockUnlinkSync).toHaveBeenCalled()
       expect(mockShowToastFn).toHaveBeenCalled()
-      expect(mockPromptFn).not.toHaveBeenCalled()
+      // Should only call with status message (noReply: true), not continuation prompt
+      const calls = mockPromptFn.mock.calls
+      const continuationCalls = calls.filter((call: any) => !call[0]?.body?.noReply)
+      expect(continuationCalls).toHaveLength(0)
     })
 
     it("should continue loop without completion marker", async () => {

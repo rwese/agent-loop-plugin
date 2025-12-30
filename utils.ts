@@ -305,12 +305,11 @@ export function createLogger(customLogger?: Partial<Logger>, logLevel: LogLevel 
 }
 
 /**
- * Simple logger (can be replaced with custom implementation)
+ * Simple logging utility (deprecated - use createLogger instead)
  * @deprecated Use createLogger instead
  */
-export function log(message: string, data?: Record<string, unknown>): void {
-  const timestamp = new Date().toISOString()
-  console.log(`[${timestamp}] ${message}`, data ? JSON.stringify(data) : "")
+export function log(_message: string, _data?: Record<string, unknown>): void {
+  // No-op: console.log removed
 }
 
 /**
