@@ -308,7 +308,7 @@ export function createIterationLoop(
       })
       showStatusMessage(
         sessionID,
-        `🔄 Iteration Loop: Started (1/${state.max_iterations}) - Looking for <completion>${state.completion_marker}</completion>`
+        `🔄 [startLoop] Iteration Loop: Started (1/${state.max_iterations}) - Looking for <completion>${state.completion_marker}</completion>`
       )
     }
     return success
@@ -335,7 +335,7 @@ export function createIterationLoop(
       })
       showStatusMessage(
         sessionID,
-        `🛑 Iteration Loop: Cancelled at iteration ${state.iteration}/${state.max_iterations}`
+        `🛑 [cancelLoop] Iteration Loop: Cancelled at iteration ${state.iteration}/${state.max_iterations}`
       )
     }
     return success
@@ -417,7 +417,7 @@ export function createIterationLoop(
 
         await showStatusMessage(
           sessionID,
-          `🎉 Iteration Loop: Complete! Finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`
+          `🎉 [session.idle] Iteration Loop: Complete! Finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`
         )
         return
       }
@@ -449,7 +449,7 @@ export function createIterationLoop(
 
         await showStatusMessage(
           sessionID,
-          `⚠️ Iteration Loop: Stopped - Max iterations (${state.max_iterations}) reached without completion marker`
+          `⚠️ [session.idle] Iteration Loop: Stopped - Max iterations (${state.max_iterations}) reached without completion marker`
         )
         return
       }
@@ -506,7 +506,7 @@ export function createIterationLoop(
         })
         await showStatusMessage(
           sessionID,
-          `🔄 Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Continue until <completion>${newState.completion_marker}</completion>`
+          `🔄 [session.idle] Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Continue until <completion>${newState.completion_marker}</completion>`
         )
       } catch (err) {
         logger.error("[session.idle] Failed to inject continuation prompt", {
