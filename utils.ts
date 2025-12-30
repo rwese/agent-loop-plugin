@@ -63,7 +63,10 @@ export function isAbortError(error: unknown): boolean {
 
     if (name === "MessageAbortedError" || name === "AbortError") {
       // Only return true if message is not empty or has abort-related content
-      if (message && (message.includes("abort") || message.includes("cancel") || message.includes("interrupt"))) {
+      if (
+        message &&
+        (message.includes("abort") || message.includes("cancel") || message.includes("interrupt"))
+      ) {
         return true
       }
       // For AbortError with empty message, still consider it an abort error
@@ -301,4 +304,59 @@ export function createLogger(customLogger?: Partial<Logger>, logLevel: LogLevel 
 export function log(message: string, data?: Record<string, unknown>): void {
   const timestamp = new Date().toISOString()
   console.log(`[${timestamp}] ${message}`, data ? JSON.stringify(data) : "")
+}
+
+/**
+ * Send an ignored message to the session UI.
+ * The message is displayed but NOT added to the model's context.
+ *
+ * @param client - The OpenCode client instance
+ * @param sessionID - The session ID to send to
+ * @param text - The message text to display
+ * @param logger - Optional logger for error reporting
+ *
+ * @example
+ * ```typescript
+ * await sendIgnoredMessage(ctx.client, sessionID, "Task loop: 3 tasks remaining");
+ * ```
+ */
+export async function sendIgnoredMessage(
+  client: {
+    session: {
+      prompt(opts: {
+        path: { id: string }
+        body: {
+          noReply?: boolean
+          parts: Array<{ type: string; text: string; ignored?: boolean }>
+        }
+      }): Promise<void>
+    }
+  },
+  sessionID: string,
+  text: string,
+  logger?: Logger
+): Promise<void> {
+  try {
+    await client.session.prompt({
+      path: { id: sessionID },
+      body: {
+        noReply: true,
+        parts: [
+          {
+            type: "text",
+            text: text,
+            ignored: true,
+          },
+        ],
+      },
+    })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (logger) {
+      logger.error("Failed to send ignored message", {
+        error: message,
+        sessionID,
+      })
+    }
+  }
 }

@@ -21,6 +21,7 @@ import {
   writeLoopState,
   clearLoopState,
   incrementIteration,
+  sendIgnoredMessage,
 } from "./utils.js"
 
 const DEFAULT_MAX_ITERATIONS = 100
@@ -126,6 +127,10 @@ export function createIterationLoop(
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
 
+  async function showStatusMessage(sessionID: string, message: string): Promise<void> {
+    await sendIgnoredMessage(ctx.client, sessionID, message, logger)
+  }
+
   const startLoop = (
     sessionID: string,
     prompt: string,
@@ -160,7 +165,10 @@ export function createIterationLoop(
 
     const success = clearLoopState(ctx.directory, stateFilePath)
     if (success) {
-      logger.info("Iteration loop cancelled", { sessionID, iteration: state.iteration })
+      logger.info("Iteration loop cancelled", {
+        sessionID,
+        iteration: state.iteration,
+      })
     }
     return success
   }
@@ -303,7 +311,9 @@ export function createIterationLoop(
         const state = readLoopState(ctx.directory, stateFilePath)
         if (state?.session_id === sessionInfo.id) {
           clearLoopState(ctx.directory, stateFilePath)
-          logger.debug("Session deleted, loop cleared", { sessionID: sessionInfo.id })
+          logger.debug("Session deleted, loop cleared", {
+            sessionID: sessionInfo.id,
+          })
         }
         sessions.delete(sessionInfo.id)
       }

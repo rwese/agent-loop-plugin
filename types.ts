@@ -17,7 +17,8 @@ export interface PluginContext {
         path: { id: string }
         body: {
           agent?: string
-          parts: Array<{ type: string; text: string }>
+          noReply?: boolean
+          parts: Array<{ type: string; text: string; ignored?: boolean }>
         }
         query?: { directory: string }
       }): Promise<void>

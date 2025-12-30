@@ -7,7 +7,7 @@
  */
 
 import type { PluginContext, Todo, LoopEvent, TaskLoopOptions, Logger } from "./types.js"
-import { isAbortError, createLogger } from "./utils.js"
+import { isAbortError, createLogger, sendIgnoredMessage } from "./utils.js"
 
 const CONTINUATION_PROMPT = `[SYSTEM REMINDER - TASK CONTINUATION]
 
@@ -120,6 +120,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       .catch(() => {})
   }
 
+  async function showStatusMessage(sessionID: string, message: string): Promise<void> {
+    await sendIgnoredMessage(ctx.client, sessionID, message, logger)
+  }
+
   function getIncompleteCount(todos: Todo[]): number {
     return todos.filter((t) => t.status !== "completed" && t.status !== "cancelled").length
   }
@@ -184,7 +188,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
       logger.info("Continuation prompt injected successfully", { sessionID })
     } catch (err) {
-      logger.error("Failed to inject continuation prompt", { sessionID, error: String(err) })
+      logger.error("Failed to inject continuation prompt", {
+        sessionID,
+        error: String(err),
+      })
     }
   }
 
@@ -296,9 +303,13 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         const state = sessions.get(sessionID)
         if (state) {
           state.lastErrorAt = undefined
+          if (state.countdownTimer) {
+            cancelCountdown(sessionID)
+            logger.debug("Countdown cancelled: user activity detected", {
+              sessionID,
+            })
+          }
         }
-        cancelCountdown(sessionID)
-        logger.debug("Countdown cancelled: user activity detected", { sessionID })
       }
 
       if (role === "assistant") {

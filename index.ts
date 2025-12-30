@@ -44,6 +44,7 @@ export {
   writeLoopState,
   clearLoopState,
   incrementIteration,
+  sendIgnoredMessage,
 } from "./utils.js"
 
 /**
