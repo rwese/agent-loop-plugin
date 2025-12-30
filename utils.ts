@@ -34,9 +34,14 @@ export function parseFrontmatter<T = Record<string, unknown>>(
       const key = line.slice(0, colonIndex).trim()
       let value: string | boolean | number = line.slice(colonIndex + 1).trim()
 
+      // Strip quotes from string values
+      if (typeof value === "string" && /^["'].*["']$/.test(value)) {
+        value = value.slice(1, -1)
+      }
+
       if (value === "true") value = true
       else if (value === "false") value = false
-      else if (!isNaN(Number(value))) value = Number(value)
+      else if (!isNaN(Number(value)) && value !== "") value = Number(value)
 
       data[key] = value
     }
@@ -56,7 +61,15 @@ export function isAbortError(error: unknown): boolean {
     const name = errObj.name as string | undefined
     const message = (errObj.message as string | undefined)?.toLowerCase() ?? ""
 
-    if (name === "MessageAbortedError" || name === "AbortError") return true
+    if (name === "MessageAbortedError" || name === "AbortError") {
+      // Only return true if message is not empty or has abort-related content
+      if (message && (message.includes("abort") || message.includes("cancel") || message.includes("interrupt"))) {
+        return true
+      }
+      // For AbortError with empty message, still consider it an abort error
+      if (name === "AbortError") return true
+      return false
+    }
     if (name === "DOMException" && message.includes("abort")) return true
     if (
       message.includes("aborted") ||
@@ -104,7 +117,7 @@ export function readLoopState(directory: string, customPath?: string): Iteration
     }
 
     const isActive = active === true || active === "true"
-    const iterationNum = typeof iteration === "number" ? iteration : Number(iteration)
+    const iterationNum = typeof iteration === "number" ? iteration : parseInt(String(iteration), 10)
 
     if (isNaN(iterationNum)) {
       return null
