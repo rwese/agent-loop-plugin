@@ -63,6 +63,21 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
   const logger: Logger = createLogger(customLogger, logLevel)
   const sessions = new Map<string, SessionState>()
+  const isDebug = logLevel === "debug"
+
+  // Show debug toast on initialization
+  if (isDebug) {
+    ctx.client.tui
+      .showToast({
+        body: {
+          title: "Task Loop",
+          message: "Plugin initialized (debug mode)",
+          variant: "info",
+          duration: 2000,
+        },
+      })
+      .catch(() => {})
+  }
 
   function getState(sessionID: string): SessionState {
     let state = sessions.get(sessionID)

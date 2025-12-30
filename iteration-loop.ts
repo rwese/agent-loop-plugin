@@ -99,6 +99,21 @@ export function createIterationLoop(
 
   const logger: Logger = createLogger(customLogger, logLevel)
   const sessions = new Map<string, SessionState>()
+  const isDebug = logLevel === "debug"
+
+  // Show debug toast on initialization
+  if (isDebug) {
+    ctx.client.tui
+      .showToast({
+        body: {
+          title: "Iteration Loop",
+          message: "Plugin initialized (debug mode)",
+          variant: "info",
+          duration: 2000,
+        },
+      })
+      .catch(() => {})
+  }
 
   function getSessionState(sessionID: string): SessionState {
     let state = sessions.get(sessionID)
