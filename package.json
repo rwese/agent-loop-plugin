@@ -1,5 +1,5 @@
 {
-  "name": "agent-loop",
+  "name": "oc-agent-loop",
   "version": "1.0.0",
   "description": "Standalone agent loop mechanisms extracted from oh-my-opencode",
   "type": "module",
