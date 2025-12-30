@@ -63,6 +63,8 @@ interface SessionState {
   countdownInterval?: ReturnType<typeof setInterval>
   /** When true, skip continuation (manual recovery mode) */
   isRecovering?: boolean
+  /** When true, completion message has been shown (prevents duplicates) */
+  completionShown?: boolean
 }
 
 /**
@@ -444,16 +446,20 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
       const incompleteCount = getIncompleteCount(todos)
       if (incompleteCount === 0) {
-        logger.info("[session.idle] All todos complete", {
-          sessionID,
-          total: todos.length,
-        })
-        await showStatusMessage(
-          sessionID,
-          `✅ [session.idle] Task Loop: All ${todos.length} tasks completed!`
-        )
+        // Only show completion message once per session
+        if (!state.completionShown) {
+          state.completionShown = true
+          logger.info("[session.idle] All todos complete", {
+            sessionID,
+            total: todos.length,
+          })
+          await showStatusMessage(sessionID, `✅ Task Loop: All ${todos.length} tasks completed!`)
+        }
         return
       }
+
+      // Reset completion flag when there are incomplete tasks
+      state.completionShown = false
 
       startCountdown(sessionID, incompleteCount, todos.length)
       return
