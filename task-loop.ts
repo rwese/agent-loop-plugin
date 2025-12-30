@@ -258,6 +258,8 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     _incompleteCount: number,
     total: number
   ): Promise<void> {
+    logger.debug("[injectContinuation] Called", { sessionID, _incompleteCount, total })
+
     const state = sessions.get(sessionID)
 
     if (state?.isRecovering) {
@@ -266,7 +268,12 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     }
 
     if (state?.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) {
-      logger.debug("[injectContinuation] Skipping: recent error (cooldown active)", { sessionID })
+      logger.debug("[injectContinuation] Skipping: recent error (cooldown active)", {
+        sessionID,
+        lastErrorAt: state.lastErrorAt,
+        cooldownMs: errorCooldownMs,
+        timeSinceError: Date.now() - state.lastErrorAt,
+      })
       return
     }
 
@@ -362,6 +369,11 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
     // Inject continuation after countdown
     state.countdownTimer = setTimeout(() => {
+      logger.debug("[startCountdown] Countdown finished, injecting continuation", {
+        sessionID,
+        incompleteCount,
+        total,
+      })
       cancelCountdown(sessionID)
       injectContinuation(sessionID, incompleteCount, total)
     }, countdownSeconds * 1000)
@@ -417,11 +429,6 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
       if (state.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) {
         logger.debug("[session.idle] Skipping: recent error (cooldown active)", { sessionID })
-        return
-      }
-
-      if (state.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) {
-        logger.debug("Skipping: recent error (cooldown active)", { sessionID })
         return
       }
 
