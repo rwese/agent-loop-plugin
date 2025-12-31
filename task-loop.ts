@@ -355,10 +355,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
       logger.info("Continuation prompt injected successfully", { sessionID })
       logToFile("Continuation prompt injected successfully", { sessionID })
-      await showStatusMessage(
-        sessionID,
-        `📋 [injectContinuation] Task Loop: Continuing with ${freshIncompleteCount} task${freshIncompleteCount > 1 ? "s" : ""} remaining`
-      )
+      // Note: Don't send status message after injection - it may interfere with AI response
     } catch (err) {
       logger.error("Failed to inject continuation prompt", {
         sessionID,
