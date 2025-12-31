@@ -133,10 +133,12 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     agent,
     model,
     outputFilePath,
+    onCountdownStart,
   } = options
 
   const logger: Logger = createLogger(customLogger, logLevel)
   const isDebug = logLevel === "debug"
+  const useExternalTimer = !!onCountdownStart
 
   // Use module-level sessions map to share state across instances
   const sessions = globalSessions
@@ -371,11 +373,8 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   /**
    * Start the countdown before auto-continuation.
    *
-   * Creates two timers:
-   * 1. Interval - updates toast every second
-   * 2. Timeout - triggers continuation after countdown
-   *
-   * User messages will cancel both via cancelCountdown().
+   * If onCountdownStart callback is provided, delegates timing to the plugin.
+   * Otherwise uses internal timers (may not work in all environments).
    */
   function startCountdown(sessionID: string, incompleteCount: number, total: number): void {
     const state = getState(sessionID)
@@ -392,8 +391,29 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       sessionID,
       seconds: countdownSeconds,
       incompleteCount,
+      useExternalTimer,
     })
 
+    // If external timer callback is provided, let the plugin handle timing
+    if (useExternalTimer && onCountdownStart) {
+      logger.info("[startCountdown] Using external timer callback", { sessionID })
+      // Set a dummy timer to mark countdown as active
+      state.countdownTimer = setTimeout(() => {}, 0) as ReturnType<typeof setTimeout>
+
+      onCountdownStart({
+        sessionID,
+        incompleteCount,
+        totalCount: total,
+        inject: async () => {
+          logger.info("[startCountdown] External timer triggered injection", { sessionID })
+          cancelCountdown(sessionID, "external-timer-complete")
+          await injectContinuation(sessionID, incompleteCount, total)
+        },
+      })
+      return
+    }
+
+    // Internal timer mode (may not work in all plugin environments)
     let secondsRemaining = countdownSeconds
     showCountdownToast(secondsRemaining, incompleteCount)
 
@@ -406,7 +426,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     }, 1000)
 
     // Inject continuation after countdown
-    state.countdownTimer = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       logger.info("[startCountdown] Countdown finished, injecting continuation", {
         sessionID,
         incompleteCount,
@@ -422,6 +442,11 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         })
       }
     }, countdownSeconds * 1000)
+
+    if (timer.ref) {
+      timer.ref()
+    }
+    state.countdownTimer = timer
 
     logger.info("[startCountdown] Timer set", {
       sessionID,

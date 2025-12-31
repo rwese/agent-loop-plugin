@@ -128,6 +128,17 @@ export interface Logger {
 }
 
 /**
+ * Callback info passed when countdown should start
+ */
+export interface CountdownCallbackInfo {
+  sessionID: string
+  incompleteCount: number
+  totalCount: number
+  /** Call this function to inject the continuation prompt */
+  inject: () => Promise<void>
+}
+
+/**
  * Options for configuring Task Loop
  */
 export interface TaskLoopOptions {
@@ -154,4 +165,11 @@ export interface TaskLoopOptions {
 
   /** File path to write loop output/logs (relative to directory) */
   outputFilePath?: string
+
+  /**
+   * Callback when countdown should start.
+   * If provided, the library will NOT handle timers - the plugin must call inject() after countdown.
+   * If not provided, the library uses internal setTimeout (may not work in all environments).
+   */
+  onCountdownStart?: (info: CountdownCallbackInfo) => void
 }

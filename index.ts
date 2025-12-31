@@ -23,6 +23,7 @@ export type {
   IterationLoopState,
   IterationLoopOptions,
   TaskLoopOptions,
+  CountdownCallbackInfo,
   Logger,
   LogLevel,
 } from "./types.js"
