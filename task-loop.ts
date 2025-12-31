@@ -199,7 +199,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     state.countdownStarting = false
 
     if (hadTimer || hadInterval) {
-      logger.debug("[cancelCountdown] Countdown cancelled", {
+      logger.info("[cancelCountdown] Countdown cancelled", {
         sessionID,
         reason: reason ?? "unknown",
         hadTimer,
@@ -422,6 +422,12 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         })
       }
     }, countdownSeconds * 1000)
+
+    logger.info("[startCountdown] Timer set", {
+      sessionID,
+      countdownSeconds,
+      timerSet: !!state.countdownTimer,
+    })
   }
 
   /**
