@@ -286,7 +286,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     _incompleteCount: number,
     total: number
   ): Promise<void> {
-    logger.debug("[injectContinuation] Called", { sessionID, _incompleteCount, total })
+    logger.info("[injectContinuation] Called", { sessionID, _incompleteCount, total })
 
     const state = sessions.get(sessionID)
 
@@ -406,14 +406,21 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     }, 1000)
 
     // Inject continuation after countdown
-    state.countdownTimer = setTimeout(() => {
-      logger.debug("[startCountdown] Countdown finished, injecting continuation", {
+    state.countdownTimer = setTimeout(async () => {
+      logger.info("[startCountdown] Countdown finished, injecting continuation", {
         sessionID,
         incompleteCount,
         total,
       })
       cancelCountdown(sessionID, "countdown-complete")
-      injectContinuation(sessionID, incompleteCount, total)
+      try {
+        await injectContinuation(sessionID, incompleteCount, total)
+      } catch (err) {
+        logger.error("[startCountdown] Failed to inject continuation", {
+          sessionID,
+          error: String(err),
+        })
+      }
     }, countdownSeconds * 1000)
   }
 
