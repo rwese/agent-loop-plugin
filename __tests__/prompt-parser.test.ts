@@ -226,6 +226,6 @@ describe("buildIterationStartPrompt", () => {
     const result = buildIterationStartPrompt("Build API", 10, "DONE", "  Some extra context  ")
 
     expect(result).toContain("Some extra context")
-    expect(result).not.toMatch(/---\s+Some extra context  /)
+    expect(result).not.toMatch(/---\s+Some extra context {2}/)
   })
 })
