@@ -32,7 +32,21 @@ state.completionShown = false
 opencode  # Interactive mode, process stays alive
 ```
 
-### In Interactive TUI
+### In Interactive TUI (Library Timers)
+
+**Cause (pre-v1.2.0):** Library's `setTimeout`/`setInterval` don't fire in plugin environment.
+
+**Solution (v1.2.0+):** Use `onCountdownStart` callback for plugin-side timer management:
+
+```javascript
+const taskLoop = createTaskLoop(ctx, {
+  onCountdownStart: ({ sessionID, incompleteCount, inject }) => {
+    // Plugin handles timer, calls inject() when done
+  },
+})
+```
+
+### In Interactive TUI (Plugin Timers)
 
 **Cause:** Could be multiple issues
 
@@ -76,6 +90,24 @@ opencode  # Interactive mode, process stays alive
 **Cause (pre-v1.1.7):** Status message with `noReply: true` sent after injection
 
 **Solution (v1.1.7):** Removed status message after injection
+
+## Issue: AI Says "Done" Without Completing Tasks
+
+**Symptom:** AI responds to continuation but says "Done: Created X todos" instead of working on them
+
+**Cause (pre-v1.2.1):** Generic continuation prompt didn't give AI specific context
+
+**Solution (v1.2.1):** Improved prompt now includes actual task list:
+
+```
+PENDING TASKS:
+1. [pending] Create user registration form
+2. [in_progress] Add validation to form fields
+
+INSTRUCTIONS:
+1. Pick the next pending task and execute it immediately
+2. Use todowrite to mark it "in_progress" then "completed" when done
+```
 
 ## Issue: Error Cooldown Blocking Continuation
 

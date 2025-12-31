@@ -59,17 +59,18 @@ Key log messages to watch for:
 
 | Variable                       | Default | Description                                 |
 | ------------------------------ | ------- | ------------------------------------------- |
-| `AGENT_LOOP_LOG_LEVEL`         | `warn`  | Log level: silent, error, warn, info, debug |
-| `AGENT_LOOP_COUNTDOWN_SECONDS` | `2`     | Seconds before auto-continue                |
+| `AGENT_LOOP_LOG_LEVEL`         | `info`  | Log level: silent, error, warn, info, debug |
+| `AGENT_LOOP_COUNTDOWN_SECONDS` | `5`     | Seconds before auto-continue                |
 | `AGENT_LOOP_ERROR_COOLDOWN_MS` | `3000`  | Pause after errors                          |
 | `AGENT_LOOP_TOAST_DURATION_MS` | `900`   | Toast display duration                      |
+| `AGENT_LOOP_HELP_AGENT`        | -       | Subagent name for AI help (e.g., "advisor") |
 
 ## Common Issues
 
 ### Countdown shows but nothing happens
 
 1. **In `opencode run`**: Expected - process exits before timer fires
-2. **In TUI**: Check for errors in debug logs
+2. **In TUI with library timers**: Library timers don't work in plugin env - use `onCountdownStart` callback (v1.2.0+)
 3. **Multiple instances**: Fixed in v1.1.6 with module-level state
 
 ### Duplicate completion messages
@@ -79,3 +80,7 @@ Fixed in v1.1.4 with `completionShown` flag.
 ### AI doesn't respond to continuation
 
 Fixed in v1.1.7 by removing status message after injection that was interfering with AI response.
+
+### AI says "Done" without completing tasks
+
+Fixed in v1.2.1 with improved continuation prompt that includes the actual task list, not just a generic "continue working" message.

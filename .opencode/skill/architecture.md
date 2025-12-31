@@ -85,6 +85,45 @@ state.countdownStarting = true // Set immediately
 
 **Solution:** Removed the status message call after successful injection.
 
+### Plugin-Side Timer Management (v1.2.0)
+
+**Problem:** Library's `setTimeout`/`setInterval` don't fire in OpenCode plugin environment.
+
+**Solution:** Added `onCountdownStart` callback option. When provided, the library delegates timer management to the plugin:
+
+```typescript
+const taskLoop = createTaskLoop(ctx, {
+  onCountdownStart: ({ sessionID, incompleteCount, totalCount, inject }) => {
+    // Plugin handles countdown timing
+    // Call inject() when countdown completes
+  },
+})
+```
+
+### Improved Continuation Prompt (v1.2.1)
+
+**Problem:** Generic continuation prompt didn't give AI specific context about pending tasks.
+
+**Solution:** `buildContinuationPrompt()` now includes the actual task list:
+
+```
+PENDING TASKS:
+1. [pending] Create user registration form
+2. [in_progress] Add validation to form fields
+```
+
+### Help Agent Support (v1.3.0)
+
+**Feature:** Optional `helpAgent` option allows AI to ask a subagent for help when blocked.
+
+When configured, the continuation prompt includes:
+
+```
+IF YOU NEED HELP:
+- Use the Task tool with subagent_type="advisor" to ask questions
+- Only use this if you are truly blocked
+```
+
 ## State Management
 
 ### SessionState Interface
