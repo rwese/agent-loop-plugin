@@ -39,16 +39,37 @@ import type { PluginContext, Todo, LoopEvent, TaskLoopOptions, Logger } from "./
 import { isAbortError, createLogger, sendIgnoredMessage, writeOutput } from "./utils.js"
 
 /**
- * System prompt injected to continue the AI on incomplete tasks.
- * Designed to be assertive - tells AI to proceed without waiting for user.
+ * Build the continuation prompt with actual task list.
+ * Includes pending tasks so the AI knows exactly what to work on.
+ *
+ * @param todos - Current todo list
+ * @param helpAgent - Optional name of a subagent for help/feedback
  */
-const CONTINUATION_PROMPT = `[SYSTEM REMINDER - TASK CONTINUATION]
+function buildContinuationPrompt(todos: Todo[], helpAgent?: string): string {
+  const pending = todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
+  const taskList = pending.map((t, i) => `${i + 1}. [${t.status}] ${t.content}`).join("\n")
 
-Incomplete tasks remain in your todo list. Continue working on the next pending task.
+  const helpSection = helpAgent
+    ? `
+IF YOU NEED HELP:
+- Use the Task tool with subagent_type="${helpAgent}" to ask questions or get feedback
+- Example: Task(prompt="I need clarification on...", subagent_type="${helpAgent}")
+- Only use this if you are truly blocked - prefer making progress independently`
+    : ""
 
-- Proceed without asking for permission
-- Mark each task complete when finished
-- Do not stop until all tasks are done`
+  return `[SYSTEM - AUTO-CONTINUATION]
+
+You have ${pending.length} incomplete task(s). Work on them NOW without asking for permission.
+
+PENDING TASKS:
+${taskList}
+
+INSTRUCTIONS:
+1. Pick the next pending task and execute it immediately
+2. Use todowrite to mark it "in_progress" then "completed" when done
+3. Continue until all tasks are complete
+4. Do NOT summarize or ask questions - just execute${helpSection}`
+}
 
 /**
  * Per-session state for managing countdowns and recovery.
@@ -133,6 +154,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     agent,
     model,
     outputFilePath,
+    helpAgent,
     onCountdownStart,
   } = options
 
@@ -329,9 +351,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       return
     }
 
-    const prompt = `${CONTINUATION_PROMPT}\n\n[Status: ${
-      todos.length - freshIncompleteCount
-    }/${todos.length} completed, ${freshIncompleteCount} remaining]`
+    const prompt = buildContinuationPrompt(todos, helpAgent)
 
     try {
       logger.info(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, {

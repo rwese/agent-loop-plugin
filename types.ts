@@ -167,6 +167,13 @@ export interface TaskLoopOptions {
   outputFilePath?: string
 
   /**
+   * Name of a subagent that can be used for help/feedback.
+   * When set, the continuation prompt will instruct the AI to use this agent
+   * via the Task tool if it needs clarification or has questions.
+   */
+  helpAgent?: string
+
+  /**
    * Callback when countdown should start.
    * If provided, the library will NOT handle timers - the plugin must call inject() after countdown.
    * If not provided, the library uses internal setTimeout (may not work in all environments).

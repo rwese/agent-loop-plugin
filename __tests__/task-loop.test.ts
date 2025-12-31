@@ -62,6 +62,54 @@ describe("TaskLoop", () => {
 
       expect(taskLoop).toBeDefined()
     })
+
+    it("should include helpAgent in continuation prompt when configured", async () => {
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
+      mockTodoFn.mockResolvedValue({ data: todos })
+
+      const taskLoop = createTaskLoop(mockContext, {
+        countdownSeconds: 0,
+        helpAgent: "advisor",
+      })
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-helpagent" },
+      }
+
+      await taskLoop.handler({ event })
+      await vi.advanceTimersByTimeAsync(100)
+
+      expect(mockPromptFn).toHaveBeenCalled()
+      const promptCall = mockPromptFn.mock.calls[0]
+      const promptText = promptCall[0]?.body?.parts?.[0]?.text ?? ""
+      expect(promptText).toContain("advisor")
+      expect(promptText).toContain("IF YOU NEED HELP")
+      expect(promptText).toContain('subagent_type="advisor"')
+    })
+
+    it("should NOT include helpAgent section when not configured", async () => {
+      const todos: Todo[] = [{ id: "1", content: "Task 1", status: "pending", priority: "high" }]
+      mockTodoFn.mockResolvedValue({ data: todos })
+
+      const taskLoop = createTaskLoop(mockContext, {
+        countdownSeconds: 0,
+        // no helpAgent
+      })
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-nohelpagent" },
+      }
+
+      await taskLoop.handler({ event })
+      await vi.advanceTimersByTimeAsync(100)
+
+      expect(mockPromptFn).toHaveBeenCalled()
+      const promptCall = mockPromptFn.mock.calls[0]
+      const promptText = promptCall[0]?.body?.parts?.[0]?.text ?? ""
+      expect(promptText).not.toContain("IF YOU NEED HELP")
+    })
   })
 
   describe("handler - session.idle", () => {
