@@ -4,7 +4,7 @@
  * Continues prompting the agent until it outputs a completion marker.
  * Uses iteration counting and state persistence to prevent infinite loops.
  *
- * The agent must output: <completion>MARKER_TEXT</completion> to signal completion.
+ * The agent must output: `<completion>MARKER_TEXT</completion>` to signal completion.
  *
  * ## How It Works
  *
@@ -53,6 +53,7 @@ import type {
   PluginContext,
   IterationLoopState,
   IterationLoopOptions,
+  IterationContinueCallbackInfo,
   LoopEvent,
   Logger,
 } from "./types.js"
@@ -67,41 +68,42 @@ import {
 } from "./utils.js"
 import { parseIterationLoopTag, buildIterationStartPrompt } from "./prompt-parser.js"
 
-/** Default maximum iterations before auto-stopping (safety limit) */
-const DEFAULT_MAX_ITERATIONS = 100
+/** Configuration constants for iteration loop behavior */
+const CONSTANTS = {
+  /** Default maximum iterations before auto-stopping (safety limit) */
+  DEFAULT_MAX_ITERATIONS: 100,
+  /** Default completion marker the AI must output to signal task completion */
+  DEFAULT_COMPLETION_MARKER: "DONE",
+  /** Minimum milliseconds between iterations to prevent duplicate triggers */
+  ITERATION_DEBOUNCE_MS: 3000,
+  /** Recovery mode duration in milliseconds after session errors */
+  RECOVERY_TIMEOUT_MS: 5000,
+} as const
 
-/** Default completion marker the AI must output to signal task completion */
-const DEFAULT_COMPLETION_MARKER = "DONE"
-
-/**
- * Template for continuation prompts sent when completion marker not detected.
- * Placeholders: {{ITERATION}}, {{MAX}}, {{MARKER}}, {{PROMPT}}
- */
 const CONTINUATION_PROMPT = `[ITERATION LOOP - ITERATION {{ITERATION}}/{{MAX}}]
 
 Your previous attempt did not output the completion marker. Continue working on the task.
 
 IMPORTANT:
 - Review your progress so far
-- Continue from where you left off  
+- Continue from where you left off
 - When FULLY complete, output: <completion>{{MARKER}}</completion>
 - Do not stop until the task is truly done
 
 Original task:
 {{PROMPT}}`
 
-/**
- * Per-session state for tracking recovery from errors.
- * Prevents continuation prompts during error recovery periods.
- */
+/** Per-session state for tracking recovery and iteration locks */
 interface SessionState {
   /** When true, skip continuation prompts (session recovering from error) */
   isRecovering?: boolean
+  /** When true, waiting for AI response (prevents duplicate iterations) */
+  waitingForResponse?: boolean
+  /** Timestamp of last iteration start (for debounce calculation) */
+  lastIterationStart?: number
 }
 
-/**
- * Result of processing a prompt for iteration loop tags
- */
+/** Result of processing a prompt for iteration loop tags */
 export interface ProcessPromptResult {
   /** Whether an iteration loop tag was found and loop was started */
   shouldIntercept: boolean
@@ -109,27 +111,24 @@ export interface ProcessPromptResult {
   modifiedPrompt: string
 }
 
+/** Public interface for the Iteration Loop */
 export interface IterationLoop {
   /** Event handler to wire into plugin event system */
   handler: (input: { event: LoopEvent }) => Promise<void>
-
   /** Start a new Iteration Loop */
   startLoop: (
     sessionID: string,
     prompt: string,
     options?: { maxIterations?: number; completionMarker?: string }
   ) => boolean
-
   /** Cancel the active loop */
   cancelLoop: (sessionID: string) => boolean
-
   /** Get current loop state */
   getState: () => IterationLoopState | null
-
   /**
    * Process a user prompt, detecting and handling iteration loop tags.
    *
-   * If an <iterationLoop> tag is found:
+   * If an `<iterationLoop>` tag is found:
    * 1. Extracts task, max iterations, and marker from the tag
    * 2. Starts the iteration loop
    * 3. Returns a modified prompt with the tag stripped and iteration context added
@@ -137,19 +136,6 @@ export interface IterationLoop {
    * @param sessionID - The session ID to start the loop for
    * @param prompt - The raw user prompt that may contain an iteration loop tag
    * @returns Result indicating whether to intercept and the modified prompt
-   *
-   * @example
-   * ```typescript
-   * const result = iterationLoop.processPrompt(sessionID, `
-   *   <iterationLoop max="20" marker="DONE">
-   *   Build a REST API
-   *   </iterationLoop>
-   * `);
-   *
-   * if (result.shouldIntercept) {
-   *   // Send result.modifiedPrompt to AI instead of original
-   * }
-   * ```
    */
   processPrompt: (sessionID: string, prompt: string) => ProcessPromptResult
 }
@@ -176,20 +162,25 @@ export interface IterationLoop {
  * // Cancel if needed
  * iterationLoop.cancelLoop(sessionID);
  * ```
+ *
+ * @param ctx - The OpenCode plugin context
+ * @param options - Configuration options for the loop
+ * @returns An IterationLoop instance with handler, startLoop, cancelLoop, and getState methods
  */
 export function createIterationLoop(
   ctx: PluginContext,
   options: IterationLoopOptions = {}
 ): IterationLoop {
   const {
-    defaultMaxIterations = DEFAULT_MAX_ITERATIONS,
-    defaultCompletionMarker = DEFAULT_COMPLETION_MARKER,
+    defaultMaxIterations = CONSTANTS.DEFAULT_MAX_ITERATIONS,
+    defaultCompletionMarker = CONSTANTS.DEFAULT_COMPLETION_MARKER,
     stateFilePath,
     logger: customLogger,
     logLevel = "info",
     agent,
     model,
     outputFilePath,
+    onContinue,
   } = options
 
   const logger: Logger = createLogger(customLogger, logLevel)
@@ -218,10 +209,7 @@ export function createIterationLoop(
       .catch(() => {})
   }
 
-  /**
-   * Get or create session state for tracking recovery status.
-   * Uses lazy initialization pattern - creates state on first access.
-   */
+  /** Get or create session state */
   function getSessionState(sessionID: string): SessionState {
     let state = sessions.get(sessionID)
     if (!state) {
@@ -231,14 +219,7 @@ export function createIterationLoop(
     return state
   }
 
-  /**
-   * Check if the AI has output the completion marker in the transcript.
-   * Reads the transcript file and searches for: <completion>MARKER</completion>
-   *
-   * @param transcriptPath - Path to the session transcript file
-   * @param marker - The completion marker to search for
-   * @returns true if marker found, false otherwise
-   */
+  /** Check if the AI has output the completion marker */
   function detectCompletionMarker(transcriptPath: string | undefined, marker: string): boolean {
     if (!transcriptPath) return false
 
@@ -254,31 +235,55 @@ export function createIterationLoop(
     }
   }
 
-  /**
-   * Escape special regex characters in a string for safe use in RegExp.
-   * Prevents injection attacks when marker contains regex metacharacters.
-   */
+  /** Check completion marker via session messages API (fallback) */
+  async function detectCompletionMarkerFromMessages(
+    sessionID: string,
+    marker: string
+  ): Promise<boolean> {
+    if (!ctx.client.session.message) {
+      logger.debug("[detectCompletionMarkerFromMessages] message API not available")
+      return false
+    }
+
+    try {
+      const response = await ctx.client.session.message({
+        path: { id: sessionID },
+        query: { limit: 10 },
+      })
+
+      const messages = Array.isArray(response) ? response : response.data || []
+      const pattern = new RegExp(`<completion>\\s*${escapeRegex(marker)}\\s*</completion>`, "is")
+
+      for (const msg of messages) {
+        if (msg.info?.role === "assistant") {
+          for (const part of msg.parts || []) {
+            if (part.type === "text" && part.text && pattern.test(part.text)) {
+              return true
+            }
+          }
+        }
+      }
+
+      return false
+    } catch (err) {
+      logger.debug("[detectCompletionMarkerFromMessages] Error fetching messages", {
+        error: String(err),
+      })
+      return false
+    }
+  }
+
+  /** Escape special regex characters */
   function escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
 
-  /**
-   * Display a status message in the session UI without affecting AI context.
-   * Uses "ignored" message type so the AI doesn't see these status updates.
-   */
+  /** Display a status message in the session UI */
   async function showStatusMessage(sessionID: string, message: string): Promise<void> {
     await sendIgnoredMessage(ctx.client, sessionID, message, logger, { agent, model })
   }
 
-  /**
-   * Start a new iteration loop for the given session.
-   * Creates state file and prepares for continuation prompts.
-   *
-   * @param sessionID - The OpenCode session ID
-   * @param prompt - The task for the AI to complete
-   * @param loopOptions - Optional max iterations and completion marker
-   * @returns true if loop started successfully, false on error
-   */
+  /** Start a new iteration loop for the given session */
   const startLoop = (
     sessionID: string,
     prompt: string,
@@ -314,13 +319,7 @@ export function createIterationLoop(
     return success
   }
 
-  /**
-   * Cancel an active iteration loop.
-   * Only cancels if the loop belongs to the specified session.
-   *
-   * @param sessionID - The session ID whose loop to cancel
-   * @returns true if cancelled, false if no matching loop found
-   */
+  /** Cancel an active iteration loop */
   const cancelLoop = (sessionID: string): boolean => {
     const state = readLoopState(ctx.directory, stateFilePath)
     if (!state || state.session_id !== sessionID) {
@@ -341,19 +340,12 @@ export function createIterationLoop(
     return success
   }
 
-  /** Get the current loop state from the persisted state file */
+  /** Get the current loop state */
   const getState = (): IterationLoopState | null => {
     return readLoopState(ctx.directory, stateFilePath)
   }
 
-  /**
-   * Main event handler - wire this into the plugin event system.
-   *
-   * Responds to:
-   * - session.idle: Check for completion, continue if needed
-   * - session.deleted: Clean up state for deleted sessions
-   * - session.error: Mark session as recovering (temporary pause)
-   */
+  /** Main event handler - wire this into the plugin event system */
   const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
     const props = event.properties
 
@@ -368,12 +360,37 @@ export function createIterationLoop(
         return
       }
 
+      // Prevent duplicate iterations - check if waiting for AI response
+      if (sessionState.waitingForResponse) {
+        logger.debug("[session.idle] Skipping: waiting for AI response", { sessionID })
+        return
+      }
+
+      const now = Date.now()
+      const timeSinceLastIteration = now - (sessionState.lastIterationStart || 0)
+      // Debounce: wait at least specified time between iterations
+      if (timeSinceLastIteration < CONSTANTS.ITERATION_DEBOUNCE_MS) {
+        logger.debug("[session.idle] Skipping: too soon since last iteration", {
+          sessionID,
+          timeSinceLastIteration,
+        })
+        return
+      }
+
+      // Set waiting flag IMMEDIATELY to prevent race conditions
+      sessionState.waitingForResponse = true
+      sessionState.lastIterationStart = now
+
       const state = readLoopState(ctx.directory, stateFilePath)
+      logger.debug("[session.idle] Read state", { state, directory: ctx.directory })
       if (!state || !state.active) {
+        logger.debug("[session.idle] No active state, skipping")
+        sessionState.waitingForResponse = false
         return
       }
 
       if (state.session_id && state.session_id !== sessionID) {
+        sessionState.waitingForResponse = false
         return
       }
 
@@ -383,9 +400,19 @@ export function createIterationLoop(
       logger.debug("[session.idle] Checking for completion marker...", {
         sessionID,
         marker: state.completion_marker,
+        transcriptPath,
       })
 
-      if (detectCompletionMarker(transcriptPath, state.completion_marker)) {
+      // Try transcript file first, then fall back to messages API
+      let completionDetected = detectCompletionMarker(transcriptPath, state.completion_marker)
+      if (!completionDetected) {
+        completionDetected = await detectCompletionMarkerFromMessages(
+          sessionID,
+          state.completion_marker
+        )
+      }
+
+      if (completionDetected) {
         logger.info(
           `[session.idle] Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
           {
@@ -419,6 +446,7 @@ export function createIterationLoop(
           sessionID,
           `🎉 [session.idle] Iteration Loop: Complete! Finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`
         )
+        sessionState.waitingForResponse = false
         return
       }
 
@@ -451,6 +479,7 @@ export function createIterationLoop(
           sessionID,
           `⚠️ [session.idle] Iteration Loop: Stopped - Max iterations (${state.max_iterations}) reached without completion marker`
         )
+        sessionState.waitingForResponse = false
         return
       }
 
@@ -458,6 +487,19 @@ export function createIterationLoop(
       const newState = incrementIteration(ctx.directory, stateFilePath)
       if (!newState) {
         logger.error("[session.idle] Failed to increment iteration", { sessionID })
+        sessionState.waitingForResponse = false
+        return
+      }
+
+      // Check if we've exceeded max iterations after increment
+      if (newState.iteration > newState.max_iterations) {
+        logger.warn("[session.idle] Exceeded max iterations after increment", {
+          sessionID,
+          iteration: newState.iteration,
+          max: newState.max_iterations,
+        })
+        clearLoopState(ctx.directory, stateFilePath)
+        sessionState.waitingForResponse = false
         return
       }
 
@@ -483,7 +525,8 @@ export function createIterationLoop(
         .replace("{{MARKER}}", newState.completion_marker)
         .replace("{{PROMPT}}", newState.prompt)
 
-      await ctx.client.tui
+      // Show toast (don't await to avoid blocking)
+      ctx.client.tui
         .showToast({
           body: {
             title: "Iteration Loop",
@@ -494,29 +537,75 @@ export function createIterationLoop(
         })
         .catch(() => {})
 
-      try {
-        await ctx.client.session.prompt({
-          path: { id: sessionID },
-          body: {
-            agent,
-            model,
-            parts: [{ type: "text", text: continuationPrompt }],
-          },
-          query: { directory: ctx.directory },
-        })
-        await showStatusMessage(
+      // Create inject function that sends the continuation prompt
+      const inject = async (): Promise<void> => {
+        try {
+          logger.info("[session.idle] Sending continuation prompt", {
+            sessionID,
+            iteration: newState.iteration,
+            promptLength: continuationPrompt.length,
+          })
+
+          await ctx.client.session.prompt({
+            path: { id: sessionID },
+            body: {
+              agent,
+              model,
+              parts: [{ type: "text", text: continuationPrompt }],
+            },
+            query: { directory: ctx.directory },
+          })
+
+          logger.info("[session.idle] Continuation prompt sent successfully", {
+            sessionID,
+          })
+          await showStatusMessage(
+            sessionID,
+            `🔄 [session.idle] Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Continue until <completion>${newState.completion_marker}</completion>`
+          )
+        } catch (err) {
+          const errorStr = String(err)
+          logger.error("[session.idle] Failed to inject continuation prompt", {
+            sessionID,
+            error: errorStr,
+          })
+          logToFile("Failed to inject continuation prompt", {
+            sessionID,
+            error: errorStr,
+          })
+          // Clear waiting flag immediately on error
+          sessionState.waitingForResponse = false
+        }
+      }
+
+      // If onContinue callback is provided, delegate to plugin with error handling
+      // Otherwise, call inject directly (may not work in all environments)
+      if (onContinue) {
+        const callbackInfo: IterationContinueCallbackInfo = {
           sessionID,
-          `🔄 [session.idle] Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Continue until <completion>${newState.completion_marker}</completion>`
-        )
-      } catch (err) {
-        logger.error("[session.idle] Failed to inject continuation prompt", {
-          sessionID,
-          error: String(err),
-        })
-        logToFile("Failed to inject continuation prompt", {
-          sessionID,
-          error: String(err),
-        })
+          iteration: newState.iteration,
+          maxIterations: newState.max_iterations,
+          marker: newState.completion_marker,
+          prompt: newState.prompt,
+          inject,
+        }
+        try {
+          onContinue(callbackInfo)
+        } catch (err) {
+          const errorStr = String(err)
+          logger.error("[session.idle] onContinue callback threw error", {
+            sessionID,
+            error: errorStr,
+          })
+          logToFile("onContinue callback threw error", {
+            sessionID,
+            error: errorStr,
+          })
+          // Clear waiting flag on error so we can try again
+          sessionState.waitingForResponse = false
+        }
+      } else {
+        await inject()
       }
     }
 
@@ -535,6 +624,21 @@ export function createIterationLoop(
       }
     }
 
+    // Handle assistant message - clear waiting flag when AI starts responding
+    if (event.type === "message.updated" || event.type === "message.part.updated") {
+      const info = props?.info as { sessionID?: string; role?: string } | undefined
+      const sessionID = info?.sessionID || (props?.part as { sessionID?: string })?.sessionID
+      const role = info?.role || (props?.info as { role?: string })?.role
+
+      if (sessionID && role === "assistant") {
+        const sessionState = getSessionState(sessionID)
+        if (sessionState.waitingForResponse) {
+          logger.debug("[message.updated] AI responding, clearing waiting flag", { sessionID })
+          sessionState.waitingForResponse = false
+        }
+      }
+    }
+
     // Handle session errors - mark as recovering briefly
     if (event.type === "session.error") {
       const sessionID = props?.sessionID
@@ -546,7 +650,7 @@ export function createIterationLoop(
         sessionState.isRecovering = true
         setTimeout(() => {
           sessionState.isRecovering = false
-        }, 5000)
+        }, CONSTANTS.RECOVERY_TIMEOUT_MS)
       }
     }
   }
@@ -586,6 +690,12 @@ export function createIterationLoop(
       maxIterations,
       marker,
     })
+
+    // Emit status message so user knows loop has started
+    showStatusMessage(
+      sessionID,
+      `🚀 [processPrompt] Iteration Loop: Started (1/${maxIterations}) - Will continue until <completion>${marker}</completion>`
+    )
 
     return { shouldIntercept: true, modifiedPrompt }
   }
