@@ -87,8 +87,8 @@ Your previous attempt did not output the completion marker. Continue working on 
 IMPORTANT:
 - Review your progress so far
 - Continue from where you left off
-- When FULLY complete, output: <completion>{{MARKER}}</completion>
-- Do not stop until the task is truly done
+- When Requirements of the task are met and validated, output: <completion>{{MARKER}}</completion>
+- Perform review with agent tester and advisor for final approval
 
 Original task:
 {{PROMPT}}`
