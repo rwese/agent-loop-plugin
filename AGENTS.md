@@ -6,8 +6,8 @@ TypeScript library providing agent loop mechanisms for OpenCode plugins. Extract
 
 **Two main components:**
 
-1. **Task Loop** - Auto-continues sessions when incomplete todos remain
-2. **Iteration Loop** - Iteration-based loop with completion marker detection
+1. **Task Loop** - Automatically continues sessions when incomplete todos remain
+2. **Iteration Loop** - Continues iteration until a completion marker is detected
 
 ## Code Style
 
@@ -31,7 +31,7 @@ utils.ts          # Shared utilities (logging, state management)
 
 - **Factory functions** - `createTaskLoop()`, `createIterationLoop()`
 - **Event-driven** - Handlers respond to `session.idle`, `session.error`, etc.
-- **Dependency injection** - `PluginContext` passed to factories
+- **Dependency injection** - `PluginContext` is passed to factory functions
 - **File-based state** - Iteration Loop persists state to `.agent-loop/`
 
 ## Development

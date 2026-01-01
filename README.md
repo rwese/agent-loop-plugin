@@ -1,6 +1,6 @@
 # Agent Loop
 
-Standalone agent loop mechanisms extracted from [oh-my-opencode](https://github.com/open-code-ai/oh-my-opencode).
+Standalone agent loop mechanisms for OpenCode plugins, extracted from [oh-my-opencode](https://github.com/open-code-ai/oh-my-opencode).
 
 ## Overview
 
@@ -8,7 +8,7 @@ This module provides two complementary loop mechanisms for OpenCode plugins:
 
 ### 1. Task Loop
 
-Automatically continues sessions when incomplete tasks remain. Perfect for:
+Automatically continues sessions when incomplete todos remain. Perfect for:
 
 - Multi-step task execution
 - Preventing premature session termination
@@ -26,7 +26,7 @@ Automatically continues sessions when incomplete tasks remain. Perfect for:
 
 Iteration-based loop that continues until a completion marker is detected. Perfect for:
 
-- Long-running tasks with uncertain completion time
+- Long-running tasks with uncertain completion times
 - Iterative refinement workflows
 - Tasks that need multiple attempts
 
@@ -40,7 +40,7 @@ Iteration-based loop that continues until a completion marker is detected. Perfe
 
 ## Installation
 
-Simply copy the `agent-loop` directory into your project:
+Copy the `agent-loop` directory into your project:
 
 ```bash
 cp -r agent-loop /path/to/your/project/
@@ -54,12 +54,12 @@ git submodule add <repository-url> agent-loop
 
 ## Dependencies
 
-**Minimal Node.js built-ins only:**
+**Uses only Node.js built-ins:**
 
-- `fs` - File system operations (for Iteration Loop state persistence)
+- `fs` - File system operations for Iteration Loop state persistence
 - `path` - Path manipulation
 
-**No external dependencies required!**
+No external dependencies required.
 
 ## Usage
 
@@ -158,8 +158,8 @@ Both loops are event-driven and respond to OpenCode events:
 
 **Task Loop:**
 
-- In-memory session state (errors, recovery, timers)
-- No persistence needed
+- In-memory session state tracking (errors, recovery status, timers)
+- No file persistence needed
 
 **Iteration Loop:**
 
@@ -306,7 +306,7 @@ ctx.on("event", async (event) => {
 
 ## Differences from oh-my-opencode
 
-This standalone version removes:
+This standalone version omits:
 
 - Background task manager integration
 - Message storage/transcript inspection (for write permission checks)
@@ -314,12 +314,12 @@ This standalone version removes:
 - Agent-specific filtering (planner mode detection)
 - oh-my-opencode config system
 
-This makes it:
+As a result, this version is:
 
-- More portable
-- Easier to understand
-- Simpler to integrate
-- No external dependencies
+- More portable across projects
+- Easier to understand and modify
+- Simpler to integrate into existing plugins
+- Free of external dependencies
 
 If you need these features, use the full [oh-my-opencode](https://github.com/open-code-ai/oh-my-opencode) plugin.
 
