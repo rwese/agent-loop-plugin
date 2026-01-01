@@ -82,16 +82,18 @@ const CONSTANTS = {
 
 const CONTINUATION_PROMPT = `[ITERATION LOOP - ITERATION {{ITERATION}}/{{MAX}}]
 
-Your previous attempt did not output the completion marker. Continue working on the task.
+You have completed {{ITERATION_MINUS_ONE}} iteration(s). Review your progress on the task:
 
-IMPORTANT:
-- Review your progress so far
-- Continue from where you left off
-- When Requirements of the task are met and validated, output: <completion>{{MARKER}}</completion>
-- Perform review with agent tester and advisor for final approval
+---
+{{PROMPT}}
+---
 
-Original task:
-{{PROMPT}}`
+Have you fully completed the requested goal?
+
+- If YES: Output <completion>{{MARKER}}</completion> to signal completion
+- If NO: Continue working on the task from where you left off
+
+Verify your work meets all requirements before signaling completion.`
 
 /** Per-session state for tracking recovery and iteration locks */
 interface SessionState {
@@ -522,6 +524,7 @@ export function createIterationLoop(
         String(newState.iteration)
       )
         .replace("{{MAX}}", String(newState.max_iterations))
+        .replace("{{ITERATION_MINUS_ONE}}", String(newState.iteration - 1))
         .replace("{{MARKER}}", newState.completion_marker)
         .replace("{{PROMPT}}", newState.prompt)
 

@@ -188,13 +188,15 @@ After
 })
 
 describe("buildIterationStartPrompt", () => {
-  it("should build a basic iteration start prompt", () => {
+  it("should build a basic iteration start prompt without completion instructions", () => {
     const result = buildIterationStartPrompt("Build a REST API", 20, "DONE")
 
     expect(result).toContain("[ITERATION LOOP STARTED - 1/20]")
     expect(result).toContain("Task: Build a REST API")
-    expect(result).toContain("<completion>DONE</completion>")
     expect(result).toContain("Begin working on this task now.")
+    // Should NOT include completion marker instructions (deferred to continuation prompt)
+    expect(result).not.toContain("<completion>")
+    expect(result).not.toContain("DONE")
   })
 
   it("should include user prompt when provided", () => {
@@ -208,6 +210,8 @@ describe("buildIterationStartPrompt", () => {
     expect(result).toContain("Task: Build API")
     expect(result).toContain("---")
     expect(result).toContain("Please follow best practices")
+    // Should NOT include completion marker
+    expect(result).not.toContain("<completion>")
   })
 
   it("should not include separator when user prompt is empty", () => {

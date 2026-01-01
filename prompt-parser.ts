@@ -62,19 +62,22 @@ export function parseIterationLoopTag(prompt: string): IterationLoopTagResult {
   }
 }
 
-/** Build the initial prompt that gets sent to the AI when starting an iteration loop */
+/** Build the initial prompt that gets sent to the AI when starting an iteration loop.
+ *
+ * NOTE: This prompt intentionally does NOT include completion marker instructions.
+ * The completion instructions are only provided in the continuation prompt (on session.idle)
+ * to prevent AI agents from prematurely outputting the done marker.
+ */
 export function buildIterationStartPrompt(
   task: string,
   maxIterations: number,
-  marker: string,
+  _marker: string,
   userPrompt?: string
 ): string {
   const parts = [
     `[ITERATION LOOP STARTED - 1/${maxIterations}]`,
     "",
     `Task: ${task}`,
-    "",
-    `IMPORTANT: When this task is FULLY complete, output: <completion>${marker}</completion>`,
     "",
     "Begin working on this task now.",
   ]
