@@ -1,65 +1,15 @@
-/**
- * Prompt Parser - Parse iteration loop tags from user prompts
- *
- * Supports tag syntax:
- * - <iterationLoop>task</iterationLoop>
- * - <iterationLoop max="20">task</iterationLoop>
- * - <iterationLoop max="20" marker="DONE">task</iterationLoop>
- * - <iterationLoop task="..." max="20" marker="DONE" /> (self-closing)
- */
+/** Parse iteration loop tags from user prompts */
 
-/**
- * Result of parsing an iteration loop tag from a prompt
- */
+/** Result of parsing an iteration loop tag from a prompt */
 export interface IterationLoopTagResult {
-  /** Whether an iteration loop tag was found */
   found: boolean
-  /** The task extracted from the tag content */
   task?: string
-  /** Maximum iterations (from max attribute) */
   maxIterations?: number
-  /** Completion marker (from marker attribute) */
   marker?: string
-  /** The prompt with the tag removed */
   cleanedPrompt: string
 }
 
-/**
- * Parse <iterationLoop> tag from user prompt
- *
- * The tag is removed from the prompt and its contents are extracted
- * for use in starting an iteration loop.
- *
- * @param prompt - The raw user prompt that may contain an iteration loop tag
- * @returns Parsed result with tag contents and cleaned prompt
- *
- * @example
- * ```typescript
- * const result = parseIterationLoopTag(`
- *   Please help:
- *   <iterationLoop max="10" marker="COMPLETE">
- *   Build a REST API
- *   </iterationLoop>
- * `);
- *
- * // result.found === true
- * // result.task === "Build a REST API"
- * // result.maxIterations === 10
- * // result.marker === "COMPLETE"
- * // result.cleanedPrompt === "Please help:"
- * ```
- *
- * @example Self-closing syntax
- * ```typescript
- * const result = parseIterationLoopTag(`
- *   <iterationLoop task="Build API" max="10" />
- * `);
- *
- * // result.found === true
- * // result.task === "Build API"
- * // result.maxIterations === 10
- * ```
- */
+/** Parse <iterationLoop> tag from user prompt */
 export function parseIterationLoopTag(prompt: string): IterationLoopTagResult {
   // Pattern for <iterationLoop ...>content</iterationLoop>
   // Using [\s\S]*? for non-greedy match across newlines
@@ -112,26 +62,7 @@ export function parseIterationLoopTag(prompt: string): IterationLoopTagResult {
   }
 }
 
-/**
- * Build the initial prompt that gets sent to the AI
- * when starting an iteration loop
- *
- * @param task - The task to work on
- * @param maxIterations - Maximum number of iterations
- * @param marker - The completion marker the AI should output
- * @param userPrompt - Optional additional user prompt content (after tag removal)
- * @returns The formatted prompt to send to the AI
- *
- * @example
- * ```typescript
- * const prompt = buildIterationStartPrompt(
- *   "Build a REST API",
- *   20,
- *   "API_COMPLETE",
- *   "Make sure to include tests"
- * );
- * ```
- */
+/** Build the initial prompt that gets sent to the AI when starting an iteration loop */
 export function buildIterationStartPrompt(
   task: string,
   maxIterations: number,
