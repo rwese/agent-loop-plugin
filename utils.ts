@@ -1,25 +1,12 @@
 /**
- * Utility functions for agent loops
+ * Shared utilities for agent loops: state management, logging, messaging, error detection
  *
- * This module provides shared utilities used by both Task Loop and Iteration Loop:
+ * ## Categories
  *
- * - **State Management**: Read/write loop state to files (YAML frontmatter format)
- * - **Logging**: Configurable loggers with level filtering and file output
- * - **Messaging**: Send "ignored" messages to session UI
- * - **Error Detection**: Identify abort/cancellation errors
- * - **Frontmatter Parsing**: Simple YAML frontmatter parser
- *
- * ## State File Format
- *
- * Loop state is persisted as Markdown with YAML frontmatter:
- * ```
- * ---
- * active: true
- * iteration: 3
- * max_iterations: 20
- * ---
- * Original prompt content here...
- * ```
+ * - **State Management**: Reading/writing loop state files with YAML frontmatter
+ * - **Logging**: Logger creation and file-based logging
+ * - **Messaging**: Sending ignored messages to sessions
+ * - **Error Detection**: Abort/cancellation error identification
  *
  * @module utils
  */
@@ -35,35 +22,27 @@ import {
 import { dirname, join } from "node:path"
 import type { IterationLoopState, Logger, LogLevel } from "./types.js"
 
-/**
- * Result of parsing frontmatter from a file.
- * Contains extracted YAML data and the remaining body content.
- */
+/** Result of parsing frontmatter from a file */
 export interface FrontmatterResult<T = Record<string, unknown>> {
-  /** Parsed YAML data from frontmatter */
+  /** Parsed frontmatter data as an object */
   data: T
-  /** Content after the frontmatter section */
+  /** Content after the frontmatter delimiter */
   body: string
 }
 
 /**
- * Parse YAML frontmatter from a string.
+ * Parse YAML frontmatter from a string. Supports strings, numbers, booleans.
  *
- * Frontmatter format:
- * ```
- * ---
- * key: value
- * number: 42
- * boolean: true
- * ---
- * Body content here...
+ * @example
+ * ```typescript
+ * const content = `---\ntitle: "Test"\ncount: 42\nactive: true\n---\nBody content`;
+ * const { data, body } = parseFrontmatter(content);
+ * // data: { title: "Test", count: 42, active: true }
+ * // body: "Body content"
  * ```
  *
- * Supports: strings, numbers, booleans. Strips quotes from string values.
- * Note: This is a simple parser, not a full YAML implementation.
- *
- * @param content - The full file content with potential frontmatter
- * @returns Parsed data and body, or empty data if no frontmatter found
+ * @param content - The string containing YAML frontmatter
+ * @returns Parsed frontmatter data and body content
  */
 export function parseFrontmatter<T = Record<string, unknown>>(
   content: string
@@ -103,17 +82,10 @@ export function parseFrontmatter<T = Record<string, unknown>>(
 
 /**
  * Check if an error is an abort/cancellation error.
+ * Handles various error formats and message patterns.
  *
- * Detects various abort error patterns:
- * - MessageAbortedError, AbortError names
- * - DOMException with "abort" message
- * - Error messages containing "aborted", "cancelled", "interrupted"
- *
- * Used to distinguish user cancellations from real errors.
- * Abort errors typically shouldn't trigger error cooldowns.
- *
- * @param error - The error to check (can be any type)
- * @returns true if this appears to be an abort/cancellation
+ * @param error - The error to check
+ * @returns true if the error appears to be an abort/cancellation error
  */
 export function isAbortError(error: unknown): boolean {
   if (!error) return false
@@ -152,36 +124,27 @@ export function isAbortError(error: unknown): boolean {
   return false
 }
 
+/** Default path for iteration loop state file */
+const DEFAULT_STATE_FILE = ".agent-loop/iteration-state.md"
+
 /**
- * Get the full path to the iteration loop state file.
+ * Get the full path to the iteration loop state file
  *
- * Default location: `.agent-loop/iteration-state.md`
- * Can be customized via options.
- *
- * @param directory - Base directory (usually ctx.directory)
- * @param customPath - Optional custom path relative to directory
+ * @param directory - The session directory
+ * @param customPath - Optional custom path (relative to directory)
+ * @returns Full path to the state file
  */
 export function getStateFilePath(directory: string, customPath?: string): string {
-  const defaultPath = ".agent-loop/iteration-state.md"
+  const defaultPath = DEFAULT_STATE_FILE
   return customPath ? join(directory, customPath) : join(directory, defaultPath)
 }
 
 /**
- * Read Iteration Loop state from the persisted file.
+ * Read Iteration Loop state from the persisted file
  *
- * Parses the YAML frontmatter to extract:
- * - active: boolean
- * - iteration: number
- * - max_iterations: number
- * - completion_marker: string
- * - started_at: ISO date string
- * - session_id: optional session binding
- *
- * The body of the file contains the original prompt.
- *
- * @param directory - Base directory
- * @param customPath - Optional custom state file path
- * @returns Parsed state or null if file doesn't exist or is invalid
+ * @param directory - The session directory
+ * @param customPath - Optional custom path for the state file
+ * @returns The loop state or null if not found/invalid
  */
 export function readLoopState(directory: string, customPath?: string): IterationLoopState | null {
   const filePath = getStateFilePath(directory, customPath)
@@ -228,15 +191,12 @@ export function readLoopState(directory: string, customPath?: string): Iteration
 }
 
 /**
- * Write Iteration Loop state to file.
+ * Write Iteration Loop state to file
  *
- * Creates the directory structure if needed.
- * State is written as Markdown with YAML frontmatter.
- *
- * @param directory - Base directory
- * @param state - The loop state to persist
- * @param customPath - Optional custom state file path
- * @returns true on success, false on error
+ * @param directory - The session directory
+ * @param state - The state object to write
+ * @param customPath - Optional custom path for the state file
+ * @returns true if write succeeded, false otherwise
  */
 export function writeLoopState(
   directory: string,
@@ -270,12 +230,11 @@ ${state.prompt}
 }
 
 /**
- * Delete the Iteration Loop state file.
- * Called when loop completes or is cancelled.
+ * Delete the Iteration Loop state file
  *
- * @param directory - Base directory
- * @param customPath - Optional custom state file path
- * @returns true on success, false on error
+ * @param directory - The session directory
+ * @param customPath - Optional custom path for the state file
+ * @returns true if deletion succeeded or file didn't exist, false on error
  */
 export function clearLoopState(directory: string, customPath?: string): boolean {
   const filePath = getStateFilePath(directory, customPath)
@@ -291,12 +250,11 @@ export function clearLoopState(directory: string, customPath?: string): boolean 
 }
 
 /**
- * Increment the iteration counter in the state file.
- * Reads current state, increments iteration, writes back.
+ * Increment the iteration counter in the state file
  *
- * @param directory - Base directory
- * @param customPath - Optional custom state file path
- * @returns Updated state or null on error
+ * @param directory - The session directory
+ * @param customPath - Optional custom path for the state file
+ * @returns Updated state or null if read/write failed
  */
 export function incrementIteration(
   directory: string,
@@ -312,16 +270,7 @@ export function incrementIteration(
   return null
 }
 
-/**
- * Log level priority mapping.
- * Higher number = more verbose. Used for level filtering.
- *
- * silent (0) - No output
- * error (1)  - Only errors
- * warn (2)   - Errors + warnings
- * info (3)   - Normal operation logs
- * debug (4)  - Verbose debugging
- */
+/** Log level priority mapping - lower values = more restrictive */
 const LOG_LEVELS: Record<LogLevel, number> = {
   silent: 0,
   error: 1,
@@ -330,118 +279,62 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   debug: 4,
 }
 
+type LogMethod = "debug" | "info" | "warn" | "error"
+
+/** Format a log message with timestamp, level, and optional data */
+function formatLogMessage(level: string, message: string, data?: Record<string, unknown>): string {
+  const timestamp = new Date().toISOString()
+  const dataStr = data ? ` ${JSON.stringify(data)}` : ""
+  return `[${timestamp}] [${level.toUpperCase()}] ${message}${dataStr}`
+}
+
 /**
  * Create a logger with level filtering and formatting
  *
- * @param customLogger - Optional custom logger implementation (defaults to console)
- * @param logLevel - Log level for filtering (defaults to 'info')
- * @returns Logger instance with level filtering
- *
- * @example
- * ```typescript
- * const logger = createLogger(console, 'debug');
- * logger.debug('Starting process...', { count: 5 });
- * logger.info('Process complete');
- * ```
+ * @param customLogger - Optional custom logger with level methods
+ * @param logLevel - Minimum log level to output (default: "info")
+ * @returns Configured logger with debug, info, warn, error methods
  */
 export function createLogger(customLogger?: Partial<Logger>, logLevel: LogLevel = "info"): Logger {
   const currentLevel = LOG_LEVELS[logLevel]
+  const shouldLog = (level: LogLevel) => LOG_LEVELS[level] <= currentLevel
 
-  function shouldLog(level: LogLevel): boolean {
-    return LOG_LEVELS[level] <= currentLevel
-  }
-
-  function formatMessage(level: string, message: string, data?: Record<string, unknown>): string {
-    const timestamp = new Date().toISOString()
-    const dataStr = data ? ` ${JSON.stringify(data)}` : ""
-    return `[${timestamp}] [${level.toUpperCase()}] ${message}${dataStr}`
-  }
+  const logMethod =
+    (level: LogMethod) =>
+    (message: string, data?: Record<string, unknown>): void => {
+      if (!shouldLog(level)) return
+      const formatted = formatLogMessage(level, message, data)
+      const method = customLogger?.[level] ?? console[level]
+      method(formatted, data)
+    }
 
   return {
-    debug(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("debug")) {
-        const formatted = formatMessage("debug", message, data)
-        if (customLogger?.debug) {
-          customLogger.debug(formatted, data)
-        } else {
-          console.debug(formatted)
-        }
-      }
-    },
-
-    info(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("info")) {
-        const formatted = formatMessage("info", message, data)
-        if (customLogger?.info) {
-          customLogger.info(formatted, data)
-        } else {
-          console.info(formatted)
-        }
-      }
-    },
-
-    warn(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("warn")) {
-        const formatted = formatMessage("warn", message, data)
-        if (customLogger?.warn) {
-          customLogger.warn(formatted, data)
-        } else {
-          console.warn(formatted)
-        }
-      }
-    },
-
-    error(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("error")) {
-        const formatted = formatMessage("error", message, data)
-        if (customLogger?.error) {
-          customLogger.error(formatted, data)
-        } else {
-          console.error(formatted)
-        }
-      }
-    },
+    debug: logMethod("debug"),
+    info: logMethod("info"),
+    warn: logMethod("warn"),
+    error: logMethod("error"),
   }
 }
 
-/**
- * Simple logging utility (deprecated - use createLogger instead)
- * @deprecated Use createLogger instead
- */
-export function log(_message: string, _data?: Record<string, unknown>): void {
-  // No-op: console.log removed
-}
-
-/**
- * Options for sending ignored messages
- */
+/** Options for sending ignored messages */
 export interface SendIgnoredMessageOptions {
-  /** Agent to use for the message */
+  /** Agent name to use when prompting */
   agent?: string
-  /** Model to use for the message */
+  /** Model name to use when prompting */
   model?: string
 }
 
 /**
- * Send an ignored message to the session UI.
- * The message is displayed but NOT added to the model's context.
+ * Send an ignored message to the session UI (displayed but not added to model context)
  *
- * @param client - The OpenCode client instance
- * @param sessionID - The session ID to send to
- * @param text - The message text to display
+ * Ignored messages appear in the session UI for user visibility but don't affect
+ * the AI's context window or response generation.
+ *
+ * @param client - OpenCode client with session.prompt method
+ * @param sessionID - Target session ID
+ * @param text - Message text to send
  * @param logger - Optional logger for error reporting
- * @param options - Optional agent and model configuration
- *
- * @example
- * ```typescript
- * await sendIgnoredMessage(ctx.client, sessionID, "Task loop: 3 tasks remaining");
- *
- * // With agent and model
- * await sendIgnoredMessage(ctx.client, sessionID, "Status update", logger, {
- *   agent: "orchestrator",
- *   model: "claude-3-5-sonnet"
- * });
- * ```
+ * @param options - Optional agent/model configuration
  */
 export async function sendIgnoredMessage(
   client: {
@@ -489,28 +382,29 @@ export async function sendIgnoredMessage(
   }
 }
 
+/** Default path for output log file */
+const DEFAULT_OUTPUT_FILE = ".agent-loop/output.log"
+
 /**
  * Get output file path for loop logging
+ *
+ * @param directory - The session directory
+ * @param customPath - Optional custom path (relative to directory)
+ * @returns Full path to the output log file
  */
 export function getOutputFilePath(directory: string, customPath?: string): string {
-  const defaultPath = ".agent-loop/output.log"
+  const defaultPath = DEFAULT_OUTPUT_FILE
   return customPath ? join(directory, customPath) : join(directory, defaultPath)
 }
 
 /**
- * Write output to a file, appending to existing content.
- * Creates the directory structure if it doesn't exist.
+ * Write output to a file, appending to existing content
  *
- * @param directory - Base directory for the output file
- * @param message - The message to write
- * @param data - Optional structured data to include
- * @param customPath - Optional custom file path (relative to directory)
- *
- * @example
- * ```typescript
- * writeOutput("/project", "Task started", { taskId: "123" });
- * writeOutput("/project", "Custom log", undefined, "logs/custom.log");
- * ```
+ * @param directory - The session directory
+ * @param message - Message to write
+ * @param data - Optional data object to serialize and append
+ * @param customPath - Optional custom path for the output file
+ * @returns true if write succeeded, false otherwise
  */
 export function writeOutput(
   directory: string,
@@ -540,8 +434,9 @@ export function writeOutput(
 /**
  * Clear the output file
  *
- * @param directory - Base directory for the output file
- * @param customPath - Optional custom file path (relative to directory)
+ * @param directory - The session directory
+ * @param customPath - Optional custom path for the output file
+ * @returns true if deletion succeeded or file didn't exist, false on error
  */
 export function clearOutput(directory: string, customPath?: string): boolean {
   const filePath = getOutputFilePath(directory, customPath)
@@ -559,15 +454,10 @@ export function clearOutput(directory: string, customPath?: string): boolean {
 /**
  * Create a file-based logger that writes to a file
  *
- * @param directory - Base directory for the output file
- * @param customPath - Optional custom file path (relative to directory)
- * @param logLevel - Log level for filtering (defaults to 'info')
- *
- * @example
- * ```typescript
- * const fileLogger = createFileLogger("/project", "logs/agent.log", "debug");
- * fileLogger.info("Task started", { taskId: "123" });
- * ```
+ * @param directory - The session directory for output file location
+ * @param customPath - Optional custom path for the log file
+ * @param logLevel - Minimum log level to output (default: "info")
+ * @returns Logger that writes formatted messages to the file
  */
 export function createFileLogger(
   directory: string,
@@ -575,39 +465,19 @@ export function createFileLogger(
   logLevel: LogLevel = "info"
 ): Logger {
   const currentLevel = LOG_LEVELS[logLevel]
+  const shouldLog = (level: LogLevel) => LOG_LEVELS[level] <= currentLevel
 
-  function shouldLog(level: LogLevel): boolean {
-    return LOG_LEVELS[level] <= currentLevel
-  }
-
-  function logToFile(level: string, message: string, data?: Record<string, unknown>): void {
-    const formattedMessage = `[${level.toUpperCase()}] ${message}`
-    writeOutput(directory, formattedMessage, data, customPath)
-  }
+  const logMethod =
+    (level: LogMethod) =>
+    (message: string, data?: Record<string, unknown>): void => {
+      if (!shouldLog(level)) return
+      writeOutput(directory, `[${level.toUpperCase()}] ${message}`, data, customPath)
+    }
 
   return {
-    debug(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("debug")) {
-        logToFile("debug", message, data)
-      }
-    },
-
-    info(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("info")) {
-        logToFile("info", message, data)
-      }
-    },
-
-    warn(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("warn")) {
-        logToFile("warn", message, data)
-      }
-    },
-
-    error(message: string, data?: Record<string, unknown>): void {
-      if (shouldLog("error")) {
-        logToFile("error", message, data)
-      }
-    },
+    debug: logMethod("debug"),
+    info: logMethod("info"),
+    warn: logMethod("warn"),
+    error: logMethod("error"),
   }
 }
