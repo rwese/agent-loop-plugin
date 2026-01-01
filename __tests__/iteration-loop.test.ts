@@ -472,4 +472,385 @@ Prompt`)
       expect(mockPromptFn).not.toHaveBeenCalled()
     })
   })
+
+  describe("onContinue callback", () => {
+    it("should call onContinue callback instead of direct injection", async () => {
+      // Setup initial state
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 1
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      const onContinueFn = vi.fn()
+
+      const iterationLoop = createIterationLoop(mockContext, {
+        onContinue: onContinueFn,
+      })
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+
+      await iterationLoop.handler({ event })
+
+      expect(onContinueFn).toHaveBeenCalled()
+      const callbackInfo = onContinueFn.mock.calls[0][0]
+      expect(callbackInfo).toHaveProperty("sessionID", "session-123")
+      expect(callbackInfo).toHaveProperty("iteration", 2)
+      expect(callbackInfo).toHaveProperty("maxIterations", 100)
+      expect(callbackInfo).toHaveProperty("marker", "DONE")
+      expect(callbackInfo).toHaveProperty("prompt", "Prompt")
+      expect(callbackInfo).toHaveProperty("inject")
+      expect(typeof callbackInfo.inject).toBe("function")
+      // Should not call prompt directly
+      expect(mockPromptFn).not.toHaveBeenCalled()
+    })
+
+    it("should handle onContinue callback error gracefully", async () => {
+      // Setup initial state
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 1
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      const onContinueFn = vi.fn().mockImplementation(() => {
+        throw new Error("Callback error")
+      })
+
+      const iterationLoop = createIterationLoop(mockContext, {
+        onContinue: onContinueFn,
+        logLevel: "debug",
+      })
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+
+      // Should not throw
+      await expect(iterationLoop.handler({ event })).resolves.not.toThrow()
+    })
+
+    it("should still inject when onContinue is not provided", async () => {
+      // Setup initial state
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 1
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      const iterationLoop = createIterationLoop(mockContext)
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+
+      await iterationLoop.handler({ event })
+
+      // Should call prompt directly
+      expect(mockPromptFn).toHaveBeenCalled()
+    })
+  })
+
+  describe("detectCompletionMarkerFromMessages", () => {
+    it("should detect completion marker in session messages", async () => {
+      // Setup initial state
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 5
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      // Mock message API response
+      const mockMessageFn = vi.fn().mockResolvedValue([
+        {
+          info: { id: "msg-1", sessionID: "session-123", role: "assistant" },
+          parts: [{ type: "text", text: "Working on the task..." }],
+        },
+        {
+          info: { id: "msg-2", sessionID: "session-123", role: "assistant" },
+          parts: [{ type: "text", text: "Done! <completion>DONE</completion>" }],
+        },
+      ])
+
+      const contextWithMessages = {
+        ...mockContext,
+        client: {
+          ...mockContext.client,
+          session: {
+            ...mockContext.client.session,
+            message: mockMessageFn,
+          },
+        },
+      }
+
+      const iterationLoop = createIterationLoop(contextWithMessages)
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+
+      await iterationLoop.handler({ event })
+
+      // Should have called message API
+      expect(mockMessageFn).toHaveBeenCalled()
+      // Should have shown completion toast
+      expect(mockShowToastFn).toHaveBeenCalled()
+      // Should have sent a status message (noReply: true) but NOT a continuation prompt
+      const promptCalls = mockPromptFn.mock.calls
+      const continuationCalls = promptCalls.filter((call) => call[0]?.body?.noReply !== true)
+      expect(continuationCalls).toHaveLength(0)
+    })
+
+    it("should fallback to messages API when transcript check fails", async () => {
+      // Setup state without completion marker in transcript
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 5
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      // Return content without completion marker
+      mockReadFileSync
+        .mockReturnValueOnce(
+          `---
+active: true
+iteration: 5
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`
+        )
+        .mockReturnValueOnce("Transcript without marker")
+
+      // Mock message API with completion marker
+      const mockMessageFn = vi.fn().mockResolvedValue([
+        {
+          info: { id: "msg-1", sessionID: "session-123", role: "assistant" },
+          parts: [{ type: "text", text: "<completion>DONE</completion>" }],
+        },
+      ])
+
+      const contextWithMessages = {
+        ...mockContext,
+        client: {
+          ...mockContext.client,
+          session: {
+            ...mockContext.client.session,
+            message: mockMessageFn,
+          },
+        },
+      }
+
+      const iterationLoop = createIterationLoop(contextWithMessages)
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+
+      await iterationLoop.handler({ event })
+
+      // Should have detected completion via messages API (no continuation prompt sent)
+      const promptCalls = mockPromptFn.mock.calls
+      const continuationCalls = promptCalls.filter((call) => call[0]?.body?.noReply !== true)
+      expect(continuationCalls).toHaveLength(0)
+    })
+
+    it("should continue loop when messages API returns no marker", async () => {
+      // Setup state without completion marker
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 1
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      // Mock message API without completion marker
+      const mockMessageFn = vi.fn().mockResolvedValue([
+        {
+          info: { id: "msg-1", sessionID: "session-123", role: "assistant" },
+          parts: [{ type: "text", text: "Still working..." }],
+        },
+      ])
+
+      const contextWithMessages = {
+        ...mockContext,
+        client: {
+          ...mockContext.client,
+          session: {
+            ...mockContext.client.session,
+            message: mockMessageFn,
+          },
+        },
+      }
+
+      const iterationLoop = createIterationLoop(contextWithMessages)
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+
+      await iterationLoop.handler({ event })
+
+      // Should continue (call prompt)
+      expect(mockPromptFn).toHaveBeenCalled()
+    })
+  })
+
+  describe("waitingForResponse race condition handling", () => {
+    it("should skip iteration when already waiting for response", async () => {
+      // Setup initial state
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 1
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      const iterationLoop = createIterationLoop(mockContext)
+
+      // First idle event - should process
+      const event1: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+      await iterationLoop.handler({ event: event1 })
+
+      // Second idle event immediately after - should be skipped
+      const event2: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+      await iterationLoop.handler({ event: event2 })
+
+      // Should only send one continuation prompt (not twice)
+      // Filter out status messages (noReply: true) to count only continuation prompts
+      const continuationCalls = mockPromptFn.mock.calls.filter(
+        (call) => call[0]?.body?.noReply !== true
+      )
+      expect(continuationCalls).toHaveLength(1)
+    })
+
+    it("should clear waiting flag when AI responds", async () => {
+      // Setup initial state
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 1
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      const iterationLoop = createIterationLoop(mockContext)
+
+      // First idle event - sets waiting flag
+      const idleEvent: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+      await iterationLoop.handler({ event: idleEvent })
+
+      // Assistant message - clears waiting flag
+      const messageEvent: LoopEvent = {
+        type: "message.updated",
+        properties: {
+          info: { sessionID: "session-123", role: "assistant" },
+        },
+      }
+      await iterationLoop.handler({ event: messageEvent })
+
+      // Now another idle should be able to process
+      const idleEvent2: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+      await iterationLoop.handler({ event: idleEvent2 })
+
+      // The second idle is still within debounce period (3 seconds), so only 1 continuation prompt is sent
+      // This is correct behavior - debounce prevents duplicate iterations even after waiting flag is cleared
+      // Filter out status messages (noReply: true) to count only continuation prompts
+      const continuationCalls = mockPromptFn.mock.calls.filter(
+        (call) => call[0]?.body?.noReply !== true
+      )
+      expect(continuationCalls).toHaveLength(1)
+    })
+
+    it("should skip rapid iterations within debounce period", async () => {
+      // Setup initial state
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 1
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z
+session_id: "session-123"
+---
+Prompt`)
+
+      const iterationLoop = createIterationLoop(mockContext)
+
+      const event: LoopEvent = {
+        type: "session.idle",
+        properties: { sessionID: "session-123" },
+      }
+
+      // Fire multiple idle events rapidly
+      await iterationLoop.handler({ event })
+      await iterationLoop.handler({ event })
+      await iterationLoop.handler({ event })
+
+      // Should only send one continuation prompt due to debounce and waiting flag
+      // Filter out status messages (noReply: true) to count only continuation prompts
+      const continuationCalls = mockPromptFn.mock.calls.filter(
+        (call) => call[0]?.body?.noReply !== true
+      )
+      expect(continuationCalls).toHaveLength(1)
+    })
+  })
 })
