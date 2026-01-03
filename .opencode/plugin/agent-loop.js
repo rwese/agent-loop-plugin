@@ -182,7 +182,7 @@ export const AgentLoopPlugin = async ({ directory, client }) => {
           const sessionID = toolCtx.sessionID
           const maxIterations = args.maxIterations || config.defaultMaxIterations
 
-          const success = iterationLoop.startLoop(sessionID, args.task, {
+          const success = await iterationLoop.startLoop(sessionID, args.task, {
             maxIterations,
           })
 
@@ -200,17 +200,15 @@ Task: ${args.task}
 Max Iterations: ${maxIterations}
 Codename: ${codename}
 
-IMPORTANT:
-- When this task is FULLY complete, call the iteration_loop_complete tool
-- The loop will automatically continue when the session goes idle
-
-Begin working on this task now.`
+The advisor will now evaluate if this task is already complete.
+If complete, the loop will terminate immediately.
+If not complete, you'll receive a continuation prompt to begin working.`
         },
       }),
 
       iteration_loop_complete: tool({
         description:
-          "Signal that the iteration loop task is complete. Call this when you have fully completed the task.",
+          "Signal that the iteration loop task is complete. Call this when you have fully completed the task. ONLY available to the advisor agent.",
         args: {
           summary: tool.schema
             .string()
@@ -219,13 +217,48 @@ Begin working on this task now.`
         },
         async execute(args, toolCtx) {
           const sessionID = toolCtx.sessionID
+
+          // Only allow the advisor agent to complete the iteration loop
+          // This prevents premature completion by other agents
+          const currentAgent = toolCtx.agent || toolCtx.info?.agent
+          if (currentAgent && currentAgent !== "advisor") {
+            return `🔄 **Iteration Loop Completion**
+
+You cannot complete this iteration loop directly. The completion is controlled by the **advisor** subagent.
+
+**What you should do instead:**
+
+1. 🛑 **Stop working** on this task
+2. 📞 **Call the advisor agent** to review your progress:
+
+\`\`\`
+/advise
+
+Please review my progress on this iteration loop task and determine if it's complete:
+
+- Task: ${iterationLoop.getState()?.prompt || "Unknown task"}
+- Current iteration: ${iterationLoop.getState()?.iteration || "Unknown"}
+- What I've accomplished so far: [Describe your work]
+
+The advisor will evaluate whether the task is truly complete and signal completion when all requirements are met.
+\`\`\`
+
+**Why this exists:** Iteration loops prevent premature completion by having an objective advisor evaluate progress. This ensures tasks are actually finished before moving on.
+
+**Current loop status:**
+- Iteration: ${iterationLoop.getState()?.iteration || "Unknown"}/${iterationLoop.getState()?.max_iterations || "Unknown"}
+- Codename: ${iterationLoop.getState()?.completion_marker || "Unknown"}
+
+Please use the advisor to continue.`
+          }
+
           const result = iterationLoop.completeLoop(sessionID, args.summary)
 
           if (!result.success) {
             return result.message
           }
 
-          return `Iteration loop completed successfully!
+          return `🎉 Iteration loop completed successfully!
 
 Iterations: ${result.iterations}
 ${args.summary ? `Summary: ${args.summary}` : ""}`

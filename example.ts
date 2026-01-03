@@ -5,7 +5,7 @@
  */
 
 import { createTaskLoop, createIterationLoop, sendIgnoredMessage } from "./index.js"
-import type { PluginContext } from "./index.js"
+import type { PluginContext, LoopEvent } from "./index.js"
 
 /**
  * Example OpenCode plugin using agent loops
@@ -27,7 +27,7 @@ export default function examplePlugin(ctx: PluginContext) {
 
   // ===== 3. Wire into event system =====
   // This is the key integration point!
-  const handleEvent = async (event: any) => {
+  const handleEvent = async (event: LoopEvent) => {
     // Both handlers are idempotent and can be called in parallel
     await Promise.all([taskLoop.handler({ event }), iterationLoop.handler({ event })])
   }
@@ -179,7 +179,7 @@ export function example4_ErrorRecovery(ctx: PluginContext) {
   const plugin = examplePlugin(ctx)
 
   // Custom error handler
-  const handleError = async (event: any) => {
+  const handleError = async (event: LoopEvent) => {
     const sessionID = event.properties?.sessionID
     if (!sessionID) return
 
@@ -291,7 +291,8 @@ export function example8_PromptTagTrigger(ctx: PluginContext) {
   // Simulate prompt interception (in real plugin, use ctx.on("prompt.before", ...))
   const handleUserPrompt = async (sessionID: string, userPrompt: string) => {
     // Process the prompt for iteration loop tags
-    const result = plugin.loops.iteration.processPrompt(sessionID, userPrompt)
+    // processPrompt now async to support immediate advisor evaluation
+    const result = await plugin.loops.iteration.processPrompt(sessionID, userPrompt)
 
     if (result.shouldIntercept) {
       // Tag was found - send the modified prompt instead
@@ -347,8 +348,8 @@ export function example9_FullPluginWithPromptTags(
   ctx.on("event", plugin.handleEvent as any)
 
   // Wire prompt interception for tag parsing
-  ctx.on("prompt.before", (event) => {
-    const result = plugin.loops.iteration.processPrompt(event.sessionID, event.prompt)
+  ctx.on("prompt.before", async (event) => {
+    const result = await plugin.loops.iteration.processPrompt(event.sessionID, event.prompt)
 
     if (result.shouldIntercept) {
       // Replace prompt with iteration-aware version

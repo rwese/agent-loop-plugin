@@ -15,6 +15,8 @@ import {
   getOutputFilePath,
   createFileLogger,
   sendIgnoredMessage,
+  generateCodename,
+  createLogger,
 } from "../utils"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -790,5 +792,76 @@ describe("sendIgnoredMessage", () => {
         sessionID: "session-123",
       })
     )
+  })
+})
+
+describe("generateCodename", () => {
+  it("should generate a codename in ADJECTIVE_NOUN format", () => {
+    const codename = generateCodename()
+    expect(codename).toMatch(/^[A-Z]+_[A-Z]+$/)
+  })
+
+  it("should generate unique codenames on multiple calls", () => {
+    const codenames = new Set<string>()
+    // Generate 50 codenames and check for uniqueness (statistically should mostly be unique)
+    for (let i = 0; i < 50; i++) {
+      codenames.add(generateCodename())
+    }
+    // With 30x30=900 possible combinations, 50 samples should have at least 40 unique
+    expect(codenames.size).toBeGreaterThan(40)
+  })
+
+  it("should only contain uppercase letters and underscore", () => {
+    for (let i = 0; i < 20; i++) {
+      const codename = generateCodename()
+      expect(codename).toMatch(/^[A-Z_]+$/)
+    }
+  })
+})
+
+describe("createLogger", () => {
+  it("should create logger with all methods", () => {
+    const logger = createLogger()
+    expect(logger).toHaveProperty("debug")
+    expect(logger).toHaveProperty("info")
+    expect(logger).toHaveProperty("warn")
+    expect(logger).toHaveProperty("error")
+  })
+
+  it("should respect log levels - silent logs nothing", () => {
+    const mockDebug = vi.fn()
+    const mockInfo = vi.fn()
+    const logger = createLogger({ debug: mockDebug, info: mockInfo }, "silent")
+
+    logger.debug("test")
+    logger.info("test")
+
+    expect(mockDebug).not.toHaveBeenCalled()
+    expect(mockInfo).not.toHaveBeenCalled()
+  })
+
+  it("should respect log levels - error only logs errors", () => {
+    const mockInfo = vi.fn()
+    const mockError = vi.fn()
+    const logger = createLogger({ info: mockInfo, error: mockError }, "error")
+
+    logger.info("test")
+    logger.error("test")
+
+    expect(mockInfo).not.toHaveBeenCalled()
+    expect(mockError).toHaveBeenCalled()
+  })
+
+  it("should log with data object", () => {
+    const mockInfo = vi.fn()
+    const logger = createLogger({ info: mockInfo }, "info")
+
+    logger.info("test message", { key: "value" })
+
+    expect(mockInfo).toHaveBeenCalled()
+    const loggedMessage = mockInfo.mock.calls[0][0]
+    expect(loggedMessage).toContain("test message")
+    expect(loggedMessage).toContain("key")
+    expect(loggedMessage).toContain("value")
   })
 })

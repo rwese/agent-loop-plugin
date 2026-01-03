@@ -153,7 +153,9 @@ describe("TaskLoop", () => {
 
       // Should only call with status message (noReply: true), not continuation prompt
       const calls = mockPromptFn.mock.calls
-      const continuationCalls = calls.filter((call: any) => !call[0]?.body?.noReply)
+      const continuationCalls = calls.filter(
+        (call: unknown[]) => !(call[0] as { body?: { noReply?: boolean } })?.body?.noReply
+      )
       expect(continuationCalls).toHaveLength(0)
     })
 
