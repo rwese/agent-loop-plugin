@@ -59,6 +59,9 @@ import type {
   IterationContinueCallbackInfo,
   LoopEvent,
   Logger,
+  CompleteLoopResult,
+  AdvisorEvaluationResult,
+  CompletionEvaluatorInfo,
 } from "./types.js"
 import {
   createLogger,
@@ -82,20 +85,18 @@ const CONSTANTS = {
   RECOVERY_TIMEOUT_MS: 5000,
 } as const
 
-const CONTINUATION_PROMPT = `[ITERATION LOOP - ITERATION {{ITERATION}}/{{MAX}}]
+/** Continuation prompt template for Advisor-based evaluation */
+const ADVISOR_CONTINUATION_PROMPT = `[ITERATION LOOP - ITERATION {{ITERATION}}/{{MAX}}]
 
-You have completed {{ITERATION_MINUS_ONE}} iteration(s). Review your progress on the task:
+You have completed {{ITERATION_MINUS_ONE}} iteration(s).
 
----
+{{ADVISOR_FEEDBACK}}
+
+Please address the issues above and continue working on the task. Once all requirements are met, the Advisor will signal completion.
+
 {{PROMPT}}
----
 
-Have you fully completed the requested goal?
-
-- If YES: Call the \`iteration_loop_complete\` tool to signal completion
-- If NO: Continue working on the task
-
-Note: If the iteration_loop_complete tool is not available, the loop will continue until max iterations.`
+{{ADDITIONAL_CONTEXT}}`
 
 /** Per-session state for tracking recovery and iteration locks */
 interface SessionState {
@@ -113,16 +114,6 @@ export interface ProcessPromptResult {
   shouldIntercept: boolean
   /** The modified prompt to send to the AI (with tag stripped, context added) */
   modifiedPrompt: string
-}
-
-/** Result of completing an iteration loop */
-export interface CompleteLoopResult {
-  /** Whether the loop was successfully completed */
-  success: boolean
-  /** Number of iterations completed */
-  iterations: number
-  /** Summary message */
-  message: string
 }
 
 /** Public interface for the Iteration Loop */
@@ -203,6 +194,8 @@ export function createIterationLoop(
     model,
     outputFilePath,
     onContinue,
+    onEvaluator,
+    getTranscript,
   } = options
 
   const logger: Logger = createLogger(customLogger, logLevel)
@@ -241,60 +234,6 @@ export function createIterationLoop(
     return state
   }
 
-  /** Check if the AI has output the completion marker */
-  function detectCompletionMarker(transcriptPath: string | undefined, marker: string): boolean {
-    if (!transcriptPath) return false
-
-    try {
-      if (!existsSync(transcriptPath)) return false
-
-      const content = readFileSync(transcriptPath, "utf-8")
-      // Case-insensitive, allows whitespace around marker
-      const pattern = new RegExp(`<completion>\\s*${escapeRegex(marker)}\\s*</completion>`, "is")
-      return pattern.test(content)
-    } catch {
-      return false
-    }
-  }
-
-  /** Check completion marker via session messages API (fallback) */
-  async function detectCompletionMarkerFromMessages(
-    sessionID: string,
-    marker: string
-  ): Promise<boolean> {
-    if (!ctx.client.session.message) {
-      logger.debug("[detectCompletionMarkerFromMessages] message API not available")
-      return false
-    }
-
-    try {
-      const response = await ctx.client.session.message({
-        path: { id: sessionID },
-        query: { limit: 10 },
-      })
-
-      const messages = Array.isArray(response) ? response : response.data || []
-      const pattern = new RegExp(`<completion>\\s*${escapeRegex(marker)}\\s*</completion>`, "is")
-
-      for (const msg of messages) {
-        if (msg.info?.role === "assistant") {
-          for (const part of msg.parts || []) {
-            if (part.type === "text" && part.text && pattern.test(part.text)) {
-              return true
-            }
-          }
-        }
-      }
-
-      return false
-    } catch (err) {
-      logger.debug("[detectCompletionMarkerFromMessages] Error fetching messages", {
-        error: String(err),
-      })
-      return false
-    }
-  }
-
   /** Escape special regex characters */
   function escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -303,6 +242,183 @@ export function createIterationLoop(
   /** Display a status message in the session UI */
   async function showStatusMessage(sessionID: string, message: string): Promise<void> {
     await sendIgnoredMessage(ctx.client, sessionID, message, logger, { agent, model })
+  }
+
+  /** Continue iteration with Advisor feedback */
+  async function continueWithAdvisorFeedback(
+    sessionID: string,
+    state: IterationLoopState,
+    feedback: string,
+    missingItems?: string[]
+  ): Promise<void> {
+    // Check max iterations before continuing
+    if (state.iteration >= state.max_iterations) {
+      logger.warn("[continueWithAdvisorFeedback] Max iterations reached", {
+        sessionID,
+        iteration: state.iteration,
+        max: state.max_iterations,
+      })
+      logToFile("Max iterations reached", {
+        sessionID,
+        iteration: state.iteration,
+        max: state.max_iterations,
+      })
+      clearLoopState(ctx.directory, stateFilePath)
+
+      await ctx.client.tui
+        .showToast({
+          body: {
+            title: "Iteration Loop Stopped",
+            message: `Max iterations (${state.max_iterations}) reached`,
+            variant: "warning",
+            duration: 5000,
+          },
+        })
+        .catch(() => {})
+
+      await showStatusMessage(
+        sessionID,
+        `⚠️ [session.idle] Iteration Loop: Stopped - Max iterations (${state.max_iterations}) reached`
+      )
+      return
+    }
+
+    // Increment iteration
+    const newState = incrementIteration(ctx.directory, stateFilePath)
+    if (!newState) {
+      logger.error("[continueWithAdvisorFeedback] Failed to increment iteration", { sessionID })
+      return
+    }
+
+    // Check if we've exceeded max iterations after increment
+    if (newState.iteration > newState.max_iterations) {
+      logger.warn("[continueWithAdvisorFeedback] Exceeded max iterations after increment", {
+        sessionID,
+        iteration: newState.iteration,
+        max: newState.max_iterations,
+      })
+      clearLoopState(ctx.directory, stateFilePath)
+      return
+    }
+
+    logger.debug(
+      `[continueWithAdvisorFeedback] Starting iteration ${newState.iteration} of ${newState.max_iterations}`,
+      {
+        sessionID,
+        iteration: newState.iteration,
+        max: newState.max_iterations,
+      }
+    )
+    logToFile(`Starting iteration ${newState.iteration} of ${newState.max_iterations}`, {
+      sessionID,
+      iteration: newState.iteration,
+      max: newState.max_iterations,
+    })
+
+    // Build the continuation prompt with Advisor feedback
+    const missingItemsText =
+      missingItems && missingItems.length > 0
+        ? `\n\nMissing items that need to be addressed:\n${missingItems.map((item) => `- ${item}`).join("\n")}`
+        : ""
+
+    const additionalContext = feedback
+      ? `\n\nAdvisor Feedback:\n${feedback}${missingItemsText}`
+      : missingItemsText
+
+    const continuationPrompt = ADVISOR_CONTINUATION_PROMPT.replace(
+      "{{ITERATION}}",
+      String(newState.iteration)
+    )
+      .replace("{{MAX}}", String(newState.max_iterations))
+      .replace("{{ITERATION_MINUS_ONE}}", String(newState.iteration - 1))
+      .replace("{{PROMPT}}", newState.prompt)
+      .replace("{{ADVISOR_FEEDBACK}}", feedback || "Please continue working on the task.")
+      .replace("{{ADDITIONAL_CONTEXT}}", additionalContext)
+
+    // Show toast
+    ctx.client.tui
+      .showToast({
+        body: {
+          title: "Iteration Loop",
+          message: `Iteration ${newState.iteration}/${newState.max_iterations} - Advisor feedback provided`,
+          variant: "info",
+          duration: 2000,
+        },
+      })
+      .catch(() => {})
+
+    // Create inject function
+    const inject = async (): Promise<void> => {
+      try {
+        logger.debug(
+          "[continueWithAdvisorFeedback] Sending continuation prompt with Advisor feedback",
+          {
+            sessionID,
+            iteration: newState.iteration,
+            promptLength: continuationPrompt.length,
+          }
+        )
+
+        await ctx.client.session.prompt({
+          path: { id: sessionID },
+          body: {
+            agent,
+            model,
+            parts: [{ type: "text", text: continuationPrompt }],
+          },
+          query: { directory: ctx.directory },
+        })
+
+        logger.debug("[continueWithAdvisorFeedback] Continuation prompt sent successfully", {
+          sessionID,
+        })
+        await showStatusMessage(
+          sessionID,
+          `🔄 [session.idle] Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Advisor feedback: ${feedback.substring(0, 100)}${feedback.length > 100 ? "..." : ""}`
+        )
+      } catch (err) {
+        const errorStr = String(err)
+        logger.error("[continueWithAdvisorFeedback] Failed to inject continuation prompt", {
+          sessionID,
+          error: errorStr,
+        })
+        logToFile("Failed to inject continuation prompt", {
+          sessionID,
+          error: errorStr,
+        })
+      }
+    }
+
+    // Use onContinue callback or inject directly
+    if (onContinue) {
+      const callbackInfo: IterationContinueCallbackInfo = {
+        sessionID,
+        iteration: newState.iteration,
+        maxIterations: newState.max_iterations,
+        marker: newState.completion_marker,
+        prompt: newState.prompt,
+        inject,
+      }
+      try {
+        onContinue(callbackInfo)
+      } catch (err) {
+        const errorStr = String(err)
+        logger.error("[continueWithAdvisorFeedback] onContinue callback threw error", {
+          sessionID,
+          error: errorStr,
+        })
+        logToFile("onContinue callback threw error", {
+          sessionID,
+          error: errorStr,
+        })
+      }
+    } else {
+      await inject()
+    }
+
+    // Record iteration time for debounce
+    const sessionState = getSessionState(sessionID)
+    sessionState.lastIterationTime = Date.now()
   }
 
   /** Start a new iteration loop for the given session */
@@ -499,46 +615,107 @@ export function createIterationLoop(
 
       const transcriptPath = props?.transcriptPath as string | undefined
 
-      // Check for completion
-      logger.debug("[session.idle] Checking for completion marker...", {
-        sessionID,
-        marker: state.completion_marker,
-        transcriptPath,
-      })
-
-      // Try transcript file first, then fall back to messages API
-      let completionDetected = detectCompletionMarker(transcriptPath, state.completion_marker)
-      if (!completionDetected) {
-        completionDetected = await detectCompletionMarkerFromMessages(
-          sessionID,
-          state.completion_marker
-        )
+      // Get the session transcript for Advisor evaluation
+      let transcript = ""
+      if (getTranscript) {
+        transcript = await getTranscript(sessionID)
+      } else if (transcriptPath && existsSync(transcriptPath)) {
+        transcript = readFileSync(transcriptPath, "utf-8")
+      } else {
+        // Get messages from API
+        try {
+          if (ctx.client.session.message) {
+            const response = await ctx.client.session.message({
+              path: { id: sessionID },
+              query: { limit: 50 },
+            })
+            const messages = Array.isArray(response) ? response : response.data || []
+            transcript = messages
+              .map((msg) => {
+                const role = msg.info?.role || "unknown"
+                const parts = msg.parts
+                  ?.filter((p) => p.type === "text" && p.text)
+                  .map((p) => p.text)
+                  .join("\n")
+                return `[${role.toUpperCase()}]\n${parts}`
+              })
+              .join("\n\n---\n\n")
+          }
+        } catch (msgErr) {
+          logger.warn("[session.idle] Failed to get transcript from messages API", {
+            sessionID,
+            error: String(msgErr),
+          })
+        }
       }
 
-      if (completionDetected) {
-        logger.debug(
-          `[session.idle] Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
-          {
-            sessionID,
-            iteration: state.iteration,
-            marker: state.completion_marker,
-          }
+      // Call the Advisor evaluator
+      if (!onEvaluator) {
+        logger.error(
+          "[session.idle] No onEvaluator callback provided - iteration loop requires Advisor-based completion detection"
         )
-        logToFile(
-          `Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
-          {
-            sessionID,
-            iteration: state.iteration,
-            marker: state.completion_marker,
-          }
+        logToFile("No onEvaluator callback provided", {
+          sessionID,
+          error: "Advisor-based completion detection is required",
+        })
+
+        // Clear state and show error
+        clearLoopState(ctx.directory, stateFilePath)
+        await ctx.client.tui
+          .showToast({
+            body: {
+              title: "Iteration Loop Error",
+              message: "No completion evaluator configured",
+              variant: "error",
+              duration: 5000,
+            },
+          })
+          .catch(() => {})
+
+        await showStatusMessage(
+          sessionID,
+          `❌ [session.idle] Iteration Loop: Error - No onEvaluator callback provided`
         )
+        sessionState.iterationInProgress = false
+        return
+      }
+
+      const evaluatorInfo: CompletionEvaluatorInfo = {
+        sessionID,
+        iteration: state.iteration,
+        maxIterations: state.max_iterations,
+        prompt: state.prompt,
+        transcript,
+        complete: (summary?: string) => completeLoop(sessionID, summary),
+        continueWithFeedback: async (feedback: string, missingItems?: string[]) => {
+          await continueWithAdvisorFeedback(sessionID, state, feedback, missingItems)
+        },
+      }
+
+      const evaluation = await onEvaluator(evaluatorInfo)
+
+      if (evaluation.isComplete) {
+        // Advisor says task is complete
+        logger.debug("[session.idle] Advisor indicated task completion", {
+          sessionID,
+          iteration: state.iteration,
+          feedback: evaluation.feedback,
+          confidence: evaluation.confidence,
+        })
+        logToFile("Advisor indicated task completion", {
+          sessionID,
+          iteration: state.iteration,
+          feedback: evaluation.feedback,
+          confidence: evaluation.confidence,
+        })
+
         clearLoopState(ctx.directory, stateFilePath)
 
         await ctx.client.tui
           .showToast({
             body: {
               title: "Iteration Loop Complete!",
-              message: `Task completed after ${state.iteration} iteration(s)`,
+              message: `Task completed after ${state.iteration} iteration(s): ${evaluation.feedback}`,
               variant: "success",
               duration: 5000,
             },
@@ -547,173 +724,35 @@ export function createIterationLoop(
 
         await showStatusMessage(
           sessionID,
-          `🎉 [session.idle] Iteration Loop: Complete! Finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`
+          `🎉 [session.idle] Iteration Loop: Complete! Finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}. Advisor feedback: ${evaluation.feedback}`
         )
         sessionState.iterationInProgress = false
         return
-      }
-
-      // Check max iterations
-      if (state.iteration >= state.max_iterations) {
-        logger.warn("[session.idle] Max iterations reached without completion", {
-          sessionID,
-          iteration: state.iteration,
-          max: state.max_iterations,
-        })
-        logToFile("Max iterations reached without completion", {
-          sessionID,
-          iteration: state.iteration,
-          max: state.max_iterations,
-        })
-        clearLoopState(ctx.directory, stateFilePath)
-
-        await ctx.client.tui
-          .showToast({
-            body: {
-              title: "Iteration Loop Stopped",
-              message: `Max iterations (${state.max_iterations}) reached without completion`,
-              variant: "warning",
-              duration: 5000,
-            },
-          })
-          .catch(() => {})
-
-        await showStatusMessage(
-          sessionID,
-          `⚠️ [session.idle] Iteration Loop: Stopped - Max iterations (${state.max_iterations}) reached without completion marker`
-        )
-        sessionState.iterationInProgress = false
-        return
-      }
-
-      // Increment and continue
-      const newState = incrementIteration(ctx.directory, stateFilePath)
-      if (!newState) {
-        logger.error("[session.idle] Failed to increment iteration", { sessionID })
-        sessionState.iterationInProgress = false
-        return
-      }
-
-      // Check if we've exceeded max iterations after increment
-      if (newState.iteration > newState.max_iterations) {
-        logger.warn("[session.idle] Exceeded max iterations after increment", {
-          sessionID,
-          iteration: newState.iteration,
-          max: newState.max_iterations,
-        })
-        clearLoopState(ctx.directory, stateFilePath)
-        sessionState.iterationInProgress = false
-        return
-      }
-
-      logger.debug(
-        `[session.idle] Starting iteration ${newState.iteration} of ${newState.max_iterations}`,
-        {
-          sessionID,
-          iteration: newState.iteration,
-          max: newState.max_iterations,
-        }
-      )
-      logToFile(`Starting iteration ${newState.iteration} of ${newState.max_iterations}`, {
-        sessionID,
-        iteration: newState.iteration,
-        max: newState.max_iterations,
-      })
-
-      const continuationPrompt = CONTINUATION_PROMPT.replace(
-        "{{ITERATION}}",
-        String(newState.iteration)
-      )
-        .replace("{{MAX}}", String(newState.max_iterations))
-        .replace("{{ITERATION_MINUS_ONE}}", String(newState.iteration - 1))
-        .replace("{{MARKER}}", newState.completion_marker)
-        .replace("{{PROMPT}}", newState.prompt)
-
-      // Show toast (don't await to avoid blocking)
-      ctx.client.tui
-        .showToast({
-          body: {
-            title: "Iteration Loop",
-            message: `Iteration ${newState.iteration}/${newState.max_iterations}`,
-            variant: "info",
-            duration: 2000,
-          },
-        })
-        .catch(() => {})
-
-      // Create inject function that sends the continuation prompt
-      const inject = async (): Promise<void> => {
-        try {
-          logger.debug("[session.idle] Sending continuation prompt", {
-            sessionID,
-            iteration: newState.iteration,
-            promptLength: continuationPrompt.length,
-          })
-
-          await ctx.client.session.prompt({
-            path: { id: sessionID },
-            body: {
-              agent,
-              model,
-              parts: [{ type: "text", text: continuationPrompt }],
-            },
-            query: { directory: ctx.directory },
-          })
-
-          logger.debug("[session.idle] Continuation prompt sent successfully", {
-            sessionID,
-          })
-          await showStatusMessage(
-            sessionID,
-            `🔄 [session.idle] Iteration Loop: Iteration ${newState.iteration}/${newState.max_iterations} - Continue until <completion>${newState.completion_marker}</completion>`
-          )
-        } catch (err) {
-          const errorStr = String(err)
-          logger.error("[session.idle] Failed to inject continuation prompt", {
-            sessionID,
-            error: errorStr,
-          })
-          logToFile("Failed to inject continuation prompt", {
-            sessionID,
-            error: errorStr,
-          })
-          // Clear lock on error so we can try again
-          sessionState.iterationInProgress = false
-        }
-      }
-
-      // If onContinue callback is provided, delegate to plugin with error handling
-      // Otherwise, call inject directly (may not work in all environments)
-      if (onContinue) {
-        const callbackInfo: IterationContinueCallbackInfo = {
-          sessionID,
-          iteration: newState.iteration,
-          maxIterations: newState.max_iterations,
-          marker: newState.completion_marker,
-          prompt: newState.prompt,
-          inject,
-        }
-        try {
-          onContinue(callbackInfo)
-        } catch (err) {
-          const errorStr = String(err)
-          logger.error("[session.idle] onContinue callback threw error", {
-            sessionID,
-            error: errorStr,
-          })
-          logToFile("onContinue callback threw error", {
-            sessionID,
-            error: errorStr,
-          })
-          // Clear lock on error so we can try again
-          sessionState.iterationInProgress = false
-        }
       } else {
-        await inject()
-      }
+        // Advisor says task is NOT complete - continue with feedback
+        logger.debug("[session.idle] Advisor indicated task not complete", {
+          sessionID,
+          iteration: state.iteration,
+          feedback: evaluation.feedback,
+          missingItems: evaluation.missingItems,
+        })
+        logToFile("Advisor indicated task not complete, continuing with feedback", {
+          sessionID,
+          iteration: state.iteration,
+          feedback: evaluation.feedback,
+          missingItems: evaluation.missingItems,
+        })
 
-      // Record successful iteration time for debounce
-      sessionState.lastIterationTime = Date.now()
+        // Continue with the Advisor feedback
+        await continueWithAdvisorFeedback(
+          sessionID,
+          state,
+          evaluation.feedback,
+          evaluation.missingItems
+        )
+        sessionState.iterationInProgress = false
+        return
+      }
     }
 
     // Handle session deletion

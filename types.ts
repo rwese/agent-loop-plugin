@@ -122,6 +122,46 @@ export interface IterationLoopState {
   session_id?: string
 }
 
+/** Result of completing an iteration loop */
+export interface CompleteLoopResult {
+  /** Whether the loop was successfully completed */
+  success: boolean
+  /** Number of iterations completed */
+  iterations: number
+  /** Summary message */
+  message: string
+}
+
+/** Result from the Advisor evaluation */
+export interface AdvisorEvaluationResult {
+  /** Whether the task is complete */
+  isComplete: boolean
+  /** Detailed feedback about progress */
+  feedback: string
+  /** Specific issues or missing items found */
+  missingItems?: string[]
+  /** Confidence level of the evaluation (0-1) */
+  confidence?: number
+}
+
+/** Information passed to the completion evaluator callback */
+export interface CompletionEvaluatorInfo {
+  /** Session ID for this iteration */
+  sessionID: string
+  /** Current iteration number */
+  iteration: number
+  /** Maximum iterations allowed */
+  maxIterations: number
+  /** Original task prompt */
+  prompt: string
+  /** Current session transcript */
+  transcript: string
+  /** Function to complete the loop */
+  complete: (summary?: string) => CompleteLoopResult
+  /** Function to continue with feedback */
+  continueWithFeedback: (feedback: string, missingItems?: string[]) => Promise<void>
+}
+
 /** Log level for controlling output verbosity */
 export type LogLevel = "silent" | "error" | "warn" | "info" | "debug"
 
@@ -183,6 +223,10 @@ export interface IterationLoopOptions {
   outputFilePath?: string
   /** Callback invoked when iteration continues (allows plugin-controlled injection) */
   onContinue?: (info: IterationContinueCallbackInfo) => void
+  /** Callback invoked to evaluate if task is complete (uses Advisor pattern) */
+  onEvaluator?: (info: CompletionEvaluatorInfo) => Promise<AdvisorEvaluationResult>
+  /** Optional custom function to get session transcript for Advisor */
+  getTranscript?: (sessionID: string) => Promise<string>
 }
 
 /** Configuration options for creating a Task Loop */

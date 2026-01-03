@@ -499,10 +499,6 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         // Only show completion message once per session
         if (!state.completionShown) {
           state.completionShown = true
-          logger.debug("[session.idle] All todos complete", {
-            sessionID,
-            total: todos.length,
-          })
           await showStatusMessage(sessionID, `✅ Task Loop: All ${todos.length} tasks completed!`)
         }
         return

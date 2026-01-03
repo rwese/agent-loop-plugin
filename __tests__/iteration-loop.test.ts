@@ -297,7 +297,7 @@ Prompt`)
   })
 
   describe("handler - session.idle", () => {
-    it("should continue loop when no completion marker detected", async () => {
+    it("should continue loop when Advisor says not complete", async () => {
       // Setup initial state
       mockExistsSync.mockReturnValue(true)
       mockReadFileSync.mockReturnValue(`---
@@ -310,7 +310,15 @@ session_id: "session-123"
 ---
 Prompt`)
 
-      const iterationLoop = createIterationLoop(mockContext)
+      // Mock Advisor that says task is NOT complete
+      const mockEvaluator = vi.fn().mockResolvedValue({
+        isComplete: false,
+        feedback: "Missing authentication middleware",
+      })
+
+      const iterationLoop = createIterationLoop(mockContext, {
+        onEvaluator: mockEvaluator,
+      })
 
       const event: LoopEvent = {
         type: "session.idle",
@@ -319,11 +327,14 @@ Prompt`)
 
       await iterationLoop.handler({ event })
 
+      // Should have called the Advisor
+      expect(mockEvaluator).toHaveBeenCalled()
+      // Should continue (send continuation prompt)
       expect(mockPromptFn).toHaveBeenCalled()
     })
 
-    it("should stop loop when completion marker is detected", async () => {
-      // Setup state and transcript with completion marker
+    it("should stop loop when Advisor says complete", async () => {
+      // Setup state
       mockExistsSync.mockReturnValue(true)
       mockReadFileSync.mockReturnValue(`---
 active: true
@@ -334,36 +345,32 @@ started_at: "2024-01-01T00:00:00.000Z"
 session_id: "session-123"
 ---
 Prompt`)
-      // Return different content for transcript check
-      mockReadFileSync
-        .mockReturnValueOnce(
-          `---
-active: true
-iteration: 5
-max_iterations: 100
-completion_marker: "DONE"
-started_at: "2024-01-01T00:00:00.000Z"
-session_id: "session-123"
----
-Prompt`
-        )
-        .mockReturnValueOnce("Transcript with <completion>DONE</completion> marker")
 
-      const iterationLoop = createIterationLoop(mockContext)
+      // Mock Advisor that says task IS complete
+      const mockEvaluator = vi.fn().mockResolvedValue({
+        isComplete: true,
+        feedback: "All requirements met",
+        confidence: 0.95,
+      })
+
+      const iterationLoop = createIterationLoop(mockContext, {
+        onEvaluator: mockEvaluator,
+      })
 
       const event: LoopEvent = {
         type: "session.idle",
-        properties: {
-          sessionID: "session-123",
-          transcriptPath: "/path/to/transcript.txt",
-        },
+        properties: { sessionID: "session-123" },
       }
 
       await iterationLoop.handler({ event })
 
+      // Should have called the Advisor
+      expect(mockEvaluator).toHaveBeenCalled()
+      // Should clear state (loop completed)
       expect(mockUnlinkSync).toHaveBeenCalled()
+      // Should show success toast
       expect(mockShowToastFn).toHaveBeenCalled()
-      // Should only call with status message (noReply: true), not continuation prompt
+      // Should NOT send continuation prompt
       const calls = mockPromptFn.mock.calls
       const continuationCalls = calls.filter((call: any) => !call[0]?.body?.noReply)
       expect(continuationCalls).toHaveLength(0)
@@ -381,7 +388,15 @@ session_id: "session-123"
 ---
 Prompt`)
 
-      const iterationLoop = createIterationLoop(mockContext)
+      // Mock Advisor that says task is NOT complete but we're at max
+      const mockEvaluator = vi.fn().mockResolvedValue({
+        isComplete: false,
+        feedback: "Still working",
+      })
+
+      const iterationLoop = createIterationLoop(mockContext, {
+        onEvaluator: mockEvaluator,
+      })
 
       const event: LoopEvent = {
         type: "session.idle",
@@ -390,15 +405,13 @@ Prompt`)
 
       await iterationLoop.handler({ event })
 
+      // Should clear state at max iterations
       expect(mockUnlinkSync).toHaveBeenCalled()
+      // Should show warning toast
       expect(mockShowToastFn).toHaveBeenCalled()
-      // Should only call with status message (noReply: true), not continuation prompt
-      const calls = mockPromptFn.mock.calls
-      const continuationCalls = calls.filter((call: any) => !call[0]?.body?.noReply)
-      expect(continuationCalls).toHaveLength(0)
     })
 
-    it("should continue loop without completion marker", async () => {
+    it("should continue loop when Advisor says not complete", async () => {
       mockExistsSync.mockReturnValue(true)
       mockReadFileSync.mockReturnValue(`---
 active: true
@@ -409,33 +422,25 @@ started_at: "2024-01-01T00:00:00.000Z"
 session_id: "session-123"
 ---
 Prompt`)
-      // Return content without completion marker
-      mockReadFileSync
-        .mockReturnValueOnce(
-          `---
-active: true
-iteration: 2
-max_iterations: 100
-completion_marker: "DONE"
-started_at: "2024-01-01T00:00:00.000Z"
-session_id: "session-123"
----
-Prompt`
-        )
-        .mockReturnValueOnce("Transcript without completion marker")
 
-      const iterationLoop = createIterationLoop(mockContext)
+      // Mock Advisor that says task is NOT complete
+      const mockEvaluator = vi.fn().mockResolvedValue({
+        isComplete: false,
+        feedback: "Continue working on the API endpoints",
+      })
+
+      const iterationLoop = createIterationLoop(mockContext, {
+        onEvaluator: mockEvaluator,
+      })
 
       const event: LoopEvent = {
         type: "session.idle",
-        properties: {
-          sessionID: "session-123",
-          transcriptPath: "/path/to/transcript.txt",
-        },
+        properties: { sessionID: "session-123" },
       }
 
       await iterationLoop.handler({ event })
 
+      expect(mockEvaluator).toHaveBeenCalled()
       expect(mockPromptFn).toHaveBeenCalled()
     })
 
