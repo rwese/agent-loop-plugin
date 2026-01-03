@@ -24,7 +24,7 @@ Automatically continues sessions when incomplete todos remain. Perfect for:
 
 ### 2. Iteration Loop
 
-Iteration-based loop that continues until a completion marker is detected. Perfect for:
+Iteration-based loop that continues until the agent signals completion via tool call. Perfect for:
 
 - Long-running tasks with uncertain completion times
 - Iterative refinement workflows
@@ -33,10 +33,11 @@ Iteration-based loop that continues until a completion marker is detected. Perfe
 **How it works:**
 
 1. Starts with a task prompt and max iterations
-2. Agent works on the task
-3. On `session.idle`, checks for completion marker: `<completion>DONE</completion>`
-4. If not found, increments iteration and continues
-5. Stops when marker detected or max iterations reached
+2. A unique codename is auto-generated (e.g., "CRIMSON_FALCON") to prevent pattern matching
+3. Agent works on the task
+4. On `session.idle`, prompts agent to review progress
+5. Agent calls `iteration_loop_complete` tool when done
+6. Stops when tool called or max iterations reached
 
 ## Installation
 
@@ -104,41 +105,41 @@ taskLoop.cleanup(sessionID) // Clean up session state
 ```typescript
 const iterationLoop = createIterationLoop(ctx, {
   defaultMaxIterations: 100,
-  defaultCompletionMarker: "DONE",
   stateFilePath: ".custom/path/state.md", // Optional custom path
 })
 
-// Start a loop
+// Start a loop - a unique codename is auto-generated
 iterationLoop.startLoop(sessionID, "Build a REST API with authentication and user management", {
   maxIterations: 20,
-  completionMarker: "API_READY",
 })
 
 // Check state
 const state = iterationLoop.getState()
 console.log(`Iteration: ${state?.iteration}/${state?.max_iterations}`)
+console.log(`Codename: ${state?.completion_marker}`) // e.g., "SHADOW_PHOENIX"
+
+// Complete the loop (call from tool handler)
+iterationLoop.completeLoop(sessionID, "API fully implemented with tests")
 
 // Cancel if needed
 iterationLoop.cancelLoop(sessionID)
 ```
 
-### Completion Marker
+### Signaling Completion
 
-The agent must output the completion marker when done:
+The agent signals completion by calling the `iteration_loop_complete` tool:
 
+```typescript
+// In your tool handler:
+iterationLoop.completeLoop(sessionID, "Task completed successfully")
 ```
-Task is complete!
 
-<completion>DONE</completion>
-```
+This is more reliable than text-based markers because:
 
-Or with custom marker:
-
-```
-API is fully implemented and tested.
-
-<completion>API_READY</completion>
-```
+- Tool calls are explicit and unambiguous
+- No regex parsing or pattern matching needed
+- Immediate effect when tool is called
+- Unique codenames prevent models from pattern-matching on previous completions
 
 ## Architecture
 
@@ -246,7 +247,6 @@ function createIterationLoop(ctx: PluginContext, options?: IterationLoopOptions)
 **Options:**
 
 - `defaultMaxIterations?: number` - Default: 100
-- `defaultCompletionMarker?: string` - Default: "DONE"
 - `stateFilePath?: string` - Default: ".agent-loop/iteration-state.md"
 
 **Returns:**
@@ -256,7 +256,14 @@ interface IterationLoop {
   handler: (input: { event: LoopEvent }) => Promise<void>
   startLoop: (sessionID, prompt, options?) => boolean
   cancelLoop: (sessionID: string) => boolean
+  completeLoop: (sessionID: string, summary?: string) => CompleteLoopResult
   getState: () => IterationLoopState | null
+}
+
+interface CompleteLoopResult {
+  success: boolean
+  iterations: number
+  message: string
 }
 ```
 
@@ -268,18 +275,19 @@ Use Iteration Loop for high-level iteration and Task Loop for sub-tasks:
 
 ```typescript
 // Start Iteration Loop for overall task
+// A unique codename is auto-generated (e.g., "ARCTIC_SENTINEL")
 iterationLoop.startLoop(sessionID, "Implement feature X completely", {
   maxIterations: 10,
-  completionMarker: "FEATURE_COMPLETE",
 })
 
 // Task Loop handles sub-tasks automatically
 // 1. Agent creates todos for feature X
 // 2. Task Loop keeps agent working on todos
 // 3. When all todos done, session goes idle
-// 4. Iteration Loop checks for <completion>FEATURE_COMPLETE</completion>
-// 5. If not found, starts iteration 2
-// 6. Process repeats until completion or max iterations
+// 4. Iteration Loop prompts agent to review progress
+// 5. If not complete, agent continues working
+// 6. When done, agent calls iteration_loop_complete tool
+// 7. Process repeats until tool called or max iterations
 ```
 
 ### Error Recovery
@@ -302,6 +310,167 @@ ctx.on("event", async (event) => {
   await taskLoop.handler({ event })
   await iterationLoop.handler({ event })
 })
+```
+
+## Plugin Tools
+
+When using the Agent Loop as an OpenCode plugin (`.opencode/plugin/agent-loop.js`), the following tools are exposed for agent use:
+
+### iteration_loop_start
+
+Start an iteration loop for a complex task. A unique codename is auto-generated to prevent pattern matching.
+
+**Arguments:**
+
+| Name            | Type     | Required | Default | Description                                  |
+| --------------- | -------- | -------- | ------- | -------------------------------------------- |
+| `task`          | `string` | Yes      | -       | The task to work on iteratively              |
+| `maxIterations` | `number` | No       | 10      | Maximum number of iterations before stopping |
+
+**Usage:**
+
+The agent should call this tool when:
+
+1. It encounters an `<iterationLoop>` tag in a user prompt
+2. A task requires multiple iterations to complete
+3. Long-running tasks need structured continuation
+
+**Example tool call:**
+
+```json
+{
+  "task": "Refactor all components to use the new design system",
+  "maxIterations": 15
+}
+```
+
+**Response:**
+
+```
+Iteration loop started successfully!
+
+Task: Refactor all components to use the new design system
+Max Iterations: 15
+Codename: CRIMSON_FALCON
+
+IMPORTANT:
+- When this task is FULLY complete, you MUST call the iteration_loop_complete tool
+- The loop will automatically continue when the session goes idle
+
+Begin working on this task now.
+```
+
+### iteration_loop_complete
+
+Signal that the iteration loop task is complete. **This is the preferred way to stop the loop.**
+
+**Arguments:**
+
+| Name      | Type     | Required | Default | Description                           |
+| --------- | -------- | -------- | ------- | ------------------------------------- |
+| `summary` | `string` | No       | -       | Optional summary of what was achieved |
+
+**Usage:**
+
+Call this tool when the task is fully complete:
+
+```json
+{
+  "summary": "All components refactored, tests passing"
+}
+```
+
+**Response:**
+
+```
+Iteration loop completed successfully!
+
+Iterations: 5
+Summary: All components refactored, tests passing
+```
+
+### iteration_loop_cancel
+
+Cancel the active iteration loop.
+
+**Arguments:** None
+
+**Usage:** Call when the iteration loop should be stopped prematurely (task abandoned).
+
+### iteration_loop_status
+
+Get the current status of the iteration loop.
+
+**Arguments:** None
+
+**Response:**
+
+```
+Iteration Loop Status:
+- Active: true
+- Iteration: 3/15
+- Codename: CRIMSON_FALCON
+- Started At: 2025-12-30T10:30:00.000Z
+- Task: Refactor all components to use the new design system
+```
+
+## Plugin Configuration
+
+The plugin is configured via environment variables:
+
+| Variable                       | Default     | Description                                 |
+| ------------------------------ | ----------- | ------------------------------------------- |
+| `AGENT_LOOP_COUNTDOWN_SECONDS` | `5`         | Countdown before auto-continue (Task Loop)  |
+| `AGENT_LOOP_ERROR_COOLDOWN_MS` | `3000`      | Error cooldown in milliseconds              |
+| `AGENT_LOOP_TOAST_DURATION_MS` | `900`       | Toast notification duration in milliseconds |
+| `AGENT_LOOP_MAX_ITERATIONS`    | `10`        | Default max iterations (Iteration Loop)     |
+| `AGENT_LOOP_LOG_LEVEL`         | `"info"`    | Log level: silent, error, warn, info, debug |
+| `AGENT_LOOP_HELP_AGENT`        | `"advisor"` | Subagent name for help/feedback             |
+
+Note: Completion markers are now auto-generated as unique codenames (e.g., "SHADOW_PHOENIX") to prevent models from pattern-matching on previous completions.
+
+## Plugin Integration
+
+### Installation
+
+Copy the plugin to your OpenCode plugins directory:
+
+```bash
+mkdir -p .opencode/plugin
+cp -r dist/ .opencode/plugin/agent-loop/
+```
+
+Or reference the local development version:
+
+```javascript
+// .opencode/plugin/agent-loop.js
+import { AgentLoopPlugin } from "../../dist/index.js"
+export const main = AgentLoopPlugin
+```
+
+### Plugin Exports
+
+The plugin exposes additional methods for programmatic control:
+
+```typescript
+const plugin = await AgentLoopPlugin({ directory, client })
+
+// Iteration Loop controls
+plugin.startIterationLoop(sessionID, prompt, options)
+plugin.cancelIterationLoop(sessionID)
+plugin.getIterationLoopState()
+
+// Task Loop controls
+plugin.pauseTaskLoop(sessionID)
+plugin.resumeTaskLoop(sessionID)
+plugin.cleanupTaskLoop(sessionID)
+
+// Status messages (visible in UI but not added to model context)
+plugin.sendStatusMessage(sessionID, "Processing...")
+
+// Direct access to loop instances
+plugin.loops.task
+plugin.loops.iteration
 ```
 
 ## Differences from oh-my-opencode

@@ -214,7 +214,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     state.countdownStarting = false
 
     if (hadTimer || hadInterval) {
-      logger.info("[cancelCountdown] Countdown cancelled", {
+      logger.debug("[cancelCountdown] Countdown cancelled", {
         sessionID,
         reason: reason ?? "unknown",
         hadTimer,
@@ -276,7 +276,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     _incompleteCount: number,
     total: number
   ): Promise<void> {
-    logger.info("[injectContinuation] Called", { sessionID, _incompleteCount, total })
+    logger.debug("[injectContinuation] Called", { sessionID, _incompleteCount, total })
 
     const state = sessions.get(sessionID)
 
@@ -320,7 +320,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     const prompt = buildContinuationPrompt(todos, helpAgent)
 
     try {
-      logger.info(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, {
+      logger.debug(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, {
         sessionID,
         incompleteCount: freshIncompleteCount,
         totalTasks: total,
@@ -341,7 +341,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         query: { directory: ctx.directory },
       })
 
-      logger.info("Continuation prompt injected successfully", { sessionID })
+      logger.debug("Continuation prompt injected successfully", { sessionID })
       logToFile("Continuation prompt injected successfully", { sessionID })
       // Note: Don't send status message after injection - it may interfere with AI response
     } catch (err) {
@@ -377,7 +377,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
     // If external timer callback is provided, let the plugin handle timing
     if (useExternalTimer && onCountdownStart) {
-      logger.info("[startCountdown] Using external timer callback", { sessionID })
+      logger.debug("[startCountdown] Using external timer callback", { sessionID })
       // Set a dummy timer to mark countdown as active
       state.countdownTimer = setTimeout(() => {}, 0) as ReturnType<typeof setTimeout>
 
@@ -386,7 +386,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         incompleteCount,
         totalCount: total,
         inject: async () => {
-          logger.info("[startCountdown] External timer triggered injection", { sessionID })
+          logger.debug("[startCountdown] External timer triggered injection", { sessionID })
           cancelCountdown(sessionID, "external-timer-complete")
           await injectContinuation(sessionID, incompleteCount, total)
         },
@@ -408,7 +408,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
 
     // Inject continuation after countdown
     const timer = setTimeout(async () => {
-      logger.info("[startCountdown] Countdown finished, injecting continuation", {
+      logger.debug("[startCountdown] Countdown finished, injecting continuation", {
         sessionID,
         incompleteCount,
         total,
@@ -429,7 +429,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     }
     state.countdownTimer = timer
 
-    logger.info("[startCountdown] Timer set", {
+    logger.debug("[startCountdown] Timer set", {
       sessionID,
       countdownSeconds,
       timerSet: !!state.countdownTimer,
@@ -499,7 +499,7 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
         // Only show completion message once per session
         if (!state.completionShown) {
           state.completionShown = true
-          logger.info("[session.idle] All todos complete", {
+          logger.debug("[session.idle] All todos complete", {
             sessionID,
             total: todos.length,
           })

@@ -4,7 +4,7 @@
  * This demonstrates both loop mechanisms working together.
  */
 
-import { createTaskLoop, createIterationLoop } from "./index.js"
+import { createTaskLoop, createIterationLoop, sendIgnoredMessage } from "./index.js"
 import type { PluginContext } from "./index.js"
 
 /**
@@ -21,7 +21,6 @@ export default function examplePlugin(ctx: PluginContext) {
   // ===== 2. Create Iteration Loop =====
   const iterationLoop = createIterationLoop(ctx, {
     defaultMaxIterations: 50,
-    defaultCompletionMarker: "DONE",
     // Custom state file path (optional)
     // stateFilePath: ".my-plugin/iteration-state.md",
   })
@@ -39,19 +38,15 @@ export default function examplePlugin(ctx: PluginContext) {
   // ===== 4. Expose loop controls =====
   return {
     /**
-     * Start an Iteration Loop manually
+     * Start an Iteration Loop manually.
+     * A unique codename is auto-generated for completion tracking.
      *
      * @example
      * plugin.startIterationLoop("session-123", "Build a REST API", {
-     *   maxIterations: 20,
-     *   completionMarker: "API_READY"
+     *   maxIterations: 20
      * });
      */
-    startIterationLoop: (
-      sessionID: string,
-      task: string,
-      options?: { maxIterations?: number; completionMarker?: string }
-    ) => {
+    startIterationLoop: (sessionID: string, task: string, options?: { maxIterations?: number }) => {
       return iterationLoop.startLoop(sessionID, task, options)
     },
 
@@ -128,6 +123,7 @@ export function example2_ManualIterationLoop(ctx: PluginContext) {
   const plugin = examplePlugin(ctx)
 
   // Start an Iteration Loop for a complex task
+  // A unique codename is auto-generated for completion tracking
   plugin.startIterationLoop(
     "session-123",
     `Create a complete REST API with:
@@ -137,10 +133,9 @@ export function example2_ManualIterationLoop(ctx: PluginContext) {
     - API documentation
     - Unit tests
     
-    Output <completion>API_COMPLETE</completion> when fully done.`,
+    When complete, use the iteration_loop_complete tool.`,
     {
       maxIterations: 30,
-      completionMarker: "API_COMPLETE",
     }
   )
 
@@ -154,14 +149,14 @@ export function example3_CombinedLoops(ctx: PluginContext) {
   const plugin = examplePlugin(ctx)
 
   // Start Iteration Loop for high-level task
+  // Completion is signaled via the iteration_loop_complete tool
   plugin.startIterationLoop(
     "session-456",
     `Implement feature X with full test coverage.
     
-    Output <completion>FEATURE_X_DONE</completion> when complete.`,
+    When complete, use the iteration_loop_complete tool.`,
     {
       maxIterations: 15,
-      completionMarker: "FEATURE_X_DONE",
     }
   )
 
@@ -169,10 +164,10 @@ export function example3_CombinedLoops(ctx: PluginContext) {
   // 1. Agent creates todos for implementation steps
   // 2. Task Loop keeps agent working on each todo
   // 3. When all todos done, session goes idle
-  // 4. Iteration Loop checks for completion marker
-  // 5. If not found, increments iteration and continues
+  // 4. Iteration Loop prompts agent to review progress
+  // 5. If not complete, agent continues working
   // 6. Agent can create new todos in next iteration
-  // 7. Process repeats until <completion> found or max iterations
+  // 7. Process repeats until agent calls iteration_loop_complete tool or max iterations
 
   return plugin
 }
@@ -188,7 +183,12 @@ export function example4_ErrorRecovery(ctx: PluginContext) {
     const sessionID = event.properties?.sessionID
     if (!sessionID) return
 
-    console.error("Session error detected")
+    // Show status message for error (ignored message so it doesn't affect AI context)
+    await sendIgnoredMessage(
+      ctx.client,
+      sessionID,
+      "⚠️ [Error Handler] Session error detected - pausing task loop for recovery"
+    )
 
     // Pause auto-continuation during recovery
     plugin.pauseTaskLoop(sessionID)
@@ -238,7 +238,7 @@ export function example5_MonitoringProgress(ctx: PluginContext) {
 export function example6_CustomCompletion(ctx: PluginContext) {
   const plugin = examplePlugin(ctx)
 
-  // Use a specific completion marker
+  // Completion is signaled via the iteration_loop_complete tool
   plugin.startIterationLoop(
     "session-999",
     `Deploy the application to production.
@@ -250,10 +250,9 @@ export function example6_CustomCompletion(ctx: PluginContext) {
     - [ ] Smoke tests passed
     - [ ] Deployed to production
     
-    When ALL steps complete, output: <completion>DEPLOYMENT_SUCCESS</completion>`,
+    When ALL steps complete, use the iteration_loop_complete tool.`,
     {
       maxIterations: 10,
-      completionMarker: "DEPLOYMENT_SUCCESS",
     }
   )
 
@@ -296,14 +295,21 @@ export function example8_PromptTagTrigger(ctx: PluginContext) {
 
     if (result.shouldIntercept) {
       // Tag was found - send the modified prompt instead
-      console.log("Iteration loop started from prompt tag")
-      console.log("Modified prompt:", result.modifiedPrompt)
-
+      // Show status message as ignored message so it doesn't affect AI context
+      await sendIgnoredMessage(
+        ctx.client,
+        sessionID,
+        `🚀 [Iteration Loop] Loop started - Modified prompt:\n${result.modifiedPrompt}`
+      )
       // In real plugin, you would send result.modifiedPrompt to the AI
       // await ctx.client.session.prompt({ ... body: { parts: [{ type: "text", text: result.modifiedPrompt }] } })
     } else {
-      // No tag found - send original prompt
-      console.log("No iteration tag found, sending original prompt")
+      // No tag found - show status message (for debugging/learning purposes)
+      await sendIgnoredMessage(
+        ctx.client,
+        sessionID,
+        "ℹ️ [Iteration Loop] No iteration tag found - sending original prompt to AI"
+      )
     }
 
     return result
@@ -356,7 +362,7 @@ export function example9_FullPluginWithPromptTags(
 /**
  * Example prompt tag syntax:
  *
- * Basic:
+ * Basic (unique codename auto-generated):
  * ```
  * <iterationLoop>
  * Build a complete REST API with authentication
@@ -370,26 +376,22 @@ export function example9_FullPluginWithPromptTags(
  * </iterationLoop>
  * ```
  *
- * With custom completion marker:
- * ```
- * <iterationLoop max="15" marker="DEPLOYED">
- * Deploy application to production
- * </iterationLoop>
- * ```
- *
  * Self-closing (task in attribute):
  * ```
- * <iterationLoop task="Fix all linting errors" max="10" marker="LINT_CLEAN" />
+ * <iterationLoop task="Fix all linting errors" max="10" />
  * ```
  *
  * Mixed with other content (tag is stripped, content preserved):
  * ```
  * Please help me with this:
  *
- * <iterationLoop max="20" marker="COMPLETE">
+ * <iterationLoop max="20">
  * Build a REST API with full test coverage
  * </iterationLoop>
  *
  * Make sure to follow best practices!
  * ```
+ *
+ * Note: The agent signals completion by calling the iteration_loop_complete tool.
+ * A unique codename is auto-generated for each loop to prevent pattern matching.
  */

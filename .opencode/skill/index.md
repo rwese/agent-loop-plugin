@@ -4,13 +4,14 @@ Quick reference for working with the oc-agent-loop library.
 
 ## Available Skills
 
-| Skill                                         | Description                                 |
-| --------------------------------------------- | ------------------------------------------- |
-| [architecture](./architecture.md)             | System design, state management, event flow |
-| [development](./development.md)               | Build, test, version, code style            |
-| [testing](./testing.md)                       | Unit tests, manual testing, debug logging   |
-| [troubleshooting](./troubleshooting.md)       | Common issues and solutions                 |
-| [plugin-integration](./plugin-integration.md) | OpenCode plugin setup and API               |
+| Skill                                         | Description                                  |
+| --------------------------------------------- | -------------------------------------------- |
+| [architecture](./architecture.md)             | System design, state management, event flow  |
+| [development](./development.md)               | Build, test, version, code style             |
+| [iteration-loop](./iteration-loop/SKILL.md)   | Using iteration loop tools for complex tasks |
+| [testing](./testing.md)                       | Unit tests, manual testing, debug logging    |
+| [troubleshooting](./troubleshooting.md)       | Common issues and solutions                  |
+| [plugin-integration](./plugin-integration.md) | OpenCode plugin setup and API                |
 
 ## Quick Start
 
@@ -28,10 +29,11 @@ npm run version:patch && git push && git push --tags
 ## Key Concepts
 
 1. **Task Loop**: Auto-continues when incomplete todos remain
-2. **Iteration Loop**: Continues until completion marker detected
-3. **Module-level state**: Shared across plugin instances
-4. **Plugin-side timers**: Library delegates timer management to plugin via callback
-5. **Help Agent**: Optional subagent for AI to ask questions when blocked
+2. **Iteration Loop**: Continues until `iteration_loop_complete` tool is called
+3. **Auto-generated codenames**: Unique identifiers prevent pattern matching
+4. **Module-level state**: Shared across plugin instances
+5. **Plugin-side timers**: Library delegates timer management to plugin via callback
+6. **Help Agent**: Optional subagent for AI to ask questions when blocked
 
 ## Version History Highlights
 
@@ -44,3 +46,4 @@ npm run version:patch && git push && git push --tags
 | v1.2.0  | Add `onCountdownStart` callback for plugin timers |
 | v1.2.1  | Improved continuation prompt with task list       |
 | v1.3.0  | Add `helpAgent` option for subagent feedback      |
+| v1.4.0  | Tool-based completion, auto-generated codenames   |

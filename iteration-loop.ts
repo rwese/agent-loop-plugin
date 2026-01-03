@@ -32,15 +32,18 @@
  *
  * ### Direct API:
  * ```typescript
+ * // Start loop - unique codename is auto-generated
  * iterationLoop.startLoop(sessionID, "Build a REST API", {
- *   maxIterations: 20,
- *   completionMarker: "API_READY"
+ *   maxIterations: 20
  * });
+ *
+ * // Complete loop via tool call
+ * iterationLoop.completeLoop(sessionID, "API fully implemented");
  * ```
  *
  * ### Via Prompt Tag:
  * ```
- * <iterationLoop max="20" marker="API_READY">
+ * <iterationLoop max="20">
  * Build a REST API with authentication
  * </iterationLoop>
  * ```
@@ -65,6 +68,7 @@ import {
   incrementIteration,
   sendIgnoredMessage,
   writeOutput,
+  generateCodename,
 } from "./utils.js"
 import { parseIterationLoopTag, buildIterationStartPrompt } from "./prompt-parser.js"
 
@@ -72,8 +76,6 @@ import { parseIterationLoopTag, buildIterationStartPrompt } from "./prompt-parse
 const CONSTANTS = {
   /** Default maximum iterations before auto-stopping (safety limit) */
   DEFAULT_MAX_ITERATIONS: 100,
-  /** Default completion marker the AI must output to signal task completion */
-  DEFAULT_COMPLETION_MARKER: "DONE",
   /** Minimum milliseconds between iterations to prevent duplicate triggers */
   ITERATION_DEBOUNCE_MS: 3000,
   /** Recovery mode duration in milliseconds after session errors */
@@ -90,19 +92,19 @@ You have completed {{ITERATION_MINUS_ONE}} iteration(s). Review your progress on
 
 Have you fully completed the requested goal?
 
-- If YES: Output <completion>{{MARKER}}</completion> to signal completion
-- If NO: Continue working on the task from where you left off
+- If YES: Call the \`iteration_loop_complete\` tool to signal completion
+- If NO: Continue working on the task
 
-Verify your work meets all requirements before signaling completion.`
+Note: If the iteration_loop_complete tool is not available, the loop will continue until max iterations.`
 
 /** Per-session state for tracking recovery and iteration locks */
 interface SessionState {
   /** When true, skip continuation prompts (session recovering from error) */
   isRecovering?: boolean
-  /** When true, waiting for AI response (prevents duplicate iterations) */
-  waitingForResponse?: boolean
-  /** Timestamp of last iteration start (for debounce calculation) */
-  lastIterationStart?: number
+  /** When true, an iteration is currently being processed (prevents duplicate iterations) */
+  iterationInProgress?: boolean
+  /** Timestamp of last successful iteration injection (for debounce calculation) */
+  lastIterationTime?: number
 }
 
 /** Result of processing a prompt for iteration loop tags */
@@ -113,18 +115,36 @@ export interface ProcessPromptResult {
   modifiedPrompt: string
 }
 
+/** Result of completing an iteration loop */
+export interface CompleteLoopResult {
+  /** Whether the loop was successfully completed */
+  success: boolean
+  /** Number of iterations completed */
+  iterations: number
+  /** Summary message */
+  message: string
+}
+
 /** Public interface for the Iteration Loop */
 export interface IterationLoop {
   /** Event handler to wire into plugin event system */
   handler: (input: { event: LoopEvent }) => Promise<void>
-  /** Start a new Iteration Loop */
-  startLoop: (
-    sessionID: string,
-    prompt: string,
-    options?: { maxIterations?: number; completionMarker?: string }
-  ) => boolean
+  /**
+   * Start a new Iteration Loop.
+   * A unique codename is auto-generated for completion tracking.
+   */
+  startLoop: (sessionID: string, prompt: string, options?: { maxIterations?: number }) => boolean
   /** Cancel the active loop */
   cancelLoop: (sessionID: string) => boolean
+  /**
+   * Complete the active loop successfully.
+   * This is the preferred way to stop the loop - call this from a tool handler.
+   *
+   * @param sessionID - The session ID to complete the loop for
+   * @param summary - Optional summary of what was accomplished
+   * @returns Result with success status and iteration count
+   */
+  completeLoop: (sessionID: string, summary?: string) => CompleteLoopResult
   /** Get current loop state */
   getState: () => IterationLoopState | null
   /**
@@ -148,26 +168,27 @@ export interface IterationLoop {
  * @example
  * ```typescript
  * const iterationLoop = createIterationLoop(ctx, {
- *   defaultMaxIterations: 50,
- *   defaultCompletionMarker: "TASK_COMPLETE"
+ *   defaultMaxIterations: 50
  * });
  *
- * // Start a loop
+ * // Start a loop - unique codename is auto-generated
  * iterationLoop.startLoop(sessionID, "Build a REST API with authentication", {
- *   maxIterations: 20,
- *   completionMarker: "API_READY"
+ *   maxIterations: 20
  * });
  *
  * // Wire into plugin event system
  * ctx.on("event", iterationLoop.handler);
  *
- * // Cancel if needed
+ * // Complete via tool call when done
+ * iterationLoop.completeLoop(sessionID, "API fully implemented");
+ *
+ * // Or cancel if needed
  * iterationLoop.cancelLoop(sessionID);
  * ```
  *
  * @param ctx - The OpenCode plugin context
  * @param options - Configuration options for the loop
- * @returns An IterationLoop instance with handler, startLoop, cancelLoop, and getState methods
+ * @returns An IterationLoop instance with handler, startLoop, cancelLoop, completeLoop, and getState methods
  */
 export function createIterationLoop(
   ctx: PluginContext,
@@ -175,7 +196,6 @@ export function createIterationLoop(
 ): IterationLoop {
   const {
     defaultMaxIterations = CONSTANTS.DEFAULT_MAX_ITERATIONS,
-    defaultCompletionMarker = CONSTANTS.DEFAULT_COMPLETION_MARKER,
     stateFilePath,
     logger: customLogger,
     logLevel = "info",
@@ -289,13 +309,17 @@ export function createIterationLoop(
   const startLoop = (
     sessionID: string,
     prompt: string,
-    loopOptions?: { maxIterations?: number; completionMarker?: string }
+    loopOptions?: { maxIterations?: number }
   ): boolean => {
+    // Always generate a unique codename for this loop
+    // This prevents models from pattern-matching on previous completion markers
+    const completionMarker = generateCodename()
+
     const state: IterationLoopState = {
       active: true,
       iteration: 1,
       max_iterations: loopOptions?.maxIterations ?? defaultMaxIterations,
-      completion_marker: loopOptions?.completionMarker ?? defaultCompletionMarker,
+      completion_marker: completionMarker,
       started_at: new Date().toISOString(),
       prompt,
       session_id: sessionID,
@@ -303,7 +327,7 @@ export function createIterationLoop(
 
     const success = writeLoopState(ctx.directory, state, stateFilePath)
     if (success) {
-      logger.info(`Starting iteration 1 of ${state.max_iterations}`, {
+      logger.debug(`Starting iteration 1 of ${state.max_iterations}`, {
         sessionID,
         maxIterations: state.max_iterations,
         completionMarker: state.completion_marker,
@@ -315,7 +339,7 @@ export function createIterationLoop(
       })
       showStatusMessage(
         sessionID,
-        `🔄 [startLoop] Iteration Loop: Started (1/${state.max_iterations}) - Looking for <completion>${state.completion_marker}</completion>`
+        `🔄 [startLoop] Iteration Loop: Started (1/${state.max_iterations}) - Use iteration_loop_complete tool when done`
       )
     }
     return success
@@ -330,7 +354,7 @@ export function createIterationLoop(
 
     const success = clearLoopState(ctx.directory, stateFilePath)
     if (success) {
-      logger.info("Iteration loop cancelled", {
+      logger.debug("Iteration loop cancelled", {
         sessionID,
         iteration: state.iteration,
       })
@@ -347,6 +371,82 @@ export function createIterationLoop(
     return readLoopState(ctx.directory, stateFilePath)
   }
 
+  /**
+   * Complete the active loop successfully.
+   * This is the preferred way to stop the loop - call this from a tool handler.
+   */
+  const completeLoop = (sessionID: string, summary?: string): CompleteLoopResult => {
+    const state = readLoopState(ctx.directory, stateFilePath)
+
+    if (!state || !state.active) {
+      return {
+        success: false,
+        iterations: 0,
+        message: "No active iteration loop to complete",
+      }
+    }
+
+    if (state.session_id && state.session_id !== sessionID) {
+      return {
+        success: false,
+        iterations: 0,
+        message: "Session ID does not match active loop",
+      }
+    }
+
+    const iterations = state.iteration
+    const success = clearLoopState(ctx.directory, stateFilePath)
+
+    if (success) {
+      const summaryText = summary ? ` - ${summary}` : ""
+      logger.debug(
+        `Iteration loop completed via tool after ${iterations} iteration(s)${summaryText}`,
+        {
+          sessionID,
+          iterations,
+          summary,
+        }
+      )
+      logToFile(
+        `Iteration loop completed via tool after ${iterations} iteration(s)${summaryText}`,
+        {
+          sessionID,
+          iterations,
+          summary,
+        }
+      )
+
+      // Show toast notification
+      ctx.client.tui
+        .showToast({
+          body: {
+            title: "Iteration Loop Complete!",
+            message: `Task completed after ${iterations} iteration(s)`,
+            variant: "success",
+            duration: 5000,
+          },
+        })
+        .catch(() => {})
+
+      showStatusMessage(
+        sessionID,
+        `🎉 [completeLoop] Iteration Loop: Complete! Finished in ${iterations} iteration${iterations > 1 ? "s" : ""}${summaryText}`
+      )
+
+      return {
+        success: true,
+        iterations,
+        message: `Loop completed successfully after ${iterations} iteration(s)${summaryText}`,
+      }
+    }
+
+    return {
+      success: false,
+      iterations,
+      message: "Failed to clear loop state",
+    }
+  }
+
   /** Main event handler - wire this into the plugin event system */
   const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
     const props = event.properties
@@ -357,19 +457,21 @@ export function createIterationLoop(
       if (!sessionID) return
 
       const sessionState = getSessionState(sessionID)
+
+      // CRITICAL: Atomic check-and-set to prevent race conditions
+      // Multiple session.idle events can fire simultaneously
+      if (sessionState.iterationInProgress) {
+        logger.debug("[session.idle] Skipping: iteration already in progress", { sessionID })
+        return
+      }
+
       if (sessionState.isRecovering) {
         logger.debug("[session.idle] Skipping: session in recovery mode", { sessionID })
         return
       }
 
-      // Prevent duplicate iterations - check if waiting for AI response
-      if (sessionState.waitingForResponse) {
-        logger.debug("[session.idle] Skipping: waiting for AI response", { sessionID })
-        return
-      }
-
       const now = Date.now()
-      const timeSinceLastIteration = now - (sessionState.lastIterationStart || 0)
+      const timeSinceLastIteration = now - (sessionState.lastIterationTime || 0)
       // Debounce: wait at least specified time between iterations
       if (timeSinceLastIteration < CONSTANTS.ITERATION_DEBOUNCE_MS) {
         logger.debug("[session.idle] Skipping: too soon since last iteration", {
@@ -379,20 +481,19 @@ export function createIterationLoop(
         return
       }
 
-      // Set waiting flag IMMEDIATELY to prevent race conditions
-      sessionState.waitingForResponse = true
-      sessionState.lastIterationStart = now
+      // LOCK: Set iteration in progress IMMEDIATELY before any async operations
+      sessionState.iterationInProgress = true
 
       const state = readLoopState(ctx.directory, stateFilePath)
       logger.debug("[session.idle] Read state", { state, directory: ctx.directory })
       if (!state || !state.active) {
         logger.debug("[session.idle] No active state, skipping")
-        sessionState.waitingForResponse = false
+        sessionState.iterationInProgress = false
         return
       }
 
       if (state.session_id && state.session_id !== sessionID) {
-        sessionState.waitingForResponse = false
+        sessionState.iterationInProgress = false
         return
       }
 
@@ -415,7 +516,7 @@ export function createIterationLoop(
       }
 
       if (completionDetected) {
-        logger.info(
+        logger.debug(
           `[session.idle] Completion detected! Task finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`,
           {
             sessionID,
@@ -448,7 +549,7 @@ export function createIterationLoop(
           sessionID,
           `🎉 [session.idle] Iteration Loop: Complete! Finished in ${state.iteration} iteration${state.iteration > 1 ? "s" : ""}`
         )
-        sessionState.waitingForResponse = false
+        sessionState.iterationInProgress = false
         return
       }
 
@@ -481,7 +582,7 @@ export function createIterationLoop(
           sessionID,
           `⚠️ [session.idle] Iteration Loop: Stopped - Max iterations (${state.max_iterations}) reached without completion marker`
         )
-        sessionState.waitingForResponse = false
+        sessionState.iterationInProgress = false
         return
       }
 
@@ -489,7 +590,7 @@ export function createIterationLoop(
       const newState = incrementIteration(ctx.directory, stateFilePath)
       if (!newState) {
         logger.error("[session.idle] Failed to increment iteration", { sessionID })
-        sessionState.waitingForResponse = false
+        sessionState.iterationInProgress = false
         return
       }
 
@@ -501,11 +602,11 @@ export function createIterationLoop(
           max: newState.max_iterations,
         })
         clearLoopState(ctx.directory, stateFilePath)
-        sessionState.waitingForResponse = false
+        sessionState.iterationInProgress = false
         return
       }
 
-      logger.info(
+      logger.debug(
         `[session.idle] Starting iteration ${newState.iteration} of ${newState.max_iterations}`,
         {
           sessionID,
@@ -543,7 +644,7 @@ export function createIterationLoop(
       // Create inject function that sends the continuation prompt
       const inject = async (): Promise<void> => {
         try {
-          logger.info("[session.idle] Sending continuation prompt", {
+          logger.debug("[session.idle] Sending continuation prompt", {
             sessionID,
             iteration: newState.iteration,
             promptLength: continuationPrompt.length,
@@ -559,7 +660,7 @@ export function createIterationLoop(
             query: { directory: ctx.directory },
           })
 
-          logger.info("[session.idle] Continuation prompt sent successfully", {
+          logger.debug("[session.idle] Continuation prompt sent successfully", {
             sessionID,
           })
           await showStatusMessage(
@@ -576,8 +677,8 @@ export function createIterationLoop(
             sessionID,
             error: errorStr,
           })
-          // Clear waiting flag immediately on error
-          sessionState.waitingForResponse = false
+          // Clear lock on error so we can try again
+          sessionState.iterationInProgress = false
         }
       }
 
@@ -604,12 +705,15 @@ export function createIterationLoop(
             sessionID,
             error: errorStr,
           })
-          // Clear waiting flag on error so we can try again
-          sessionState.waitingForResponse = false
+          // Clear lock on error so we can try again
+          sessionState.iterationInProgress = false
         }
       } else {
         await inject()
       }
+
+      // Record successful iteration time for debounce
+      sessionState.lastIterationTime = Date.now()
     }
 
     // Handle session deletion
@@ -627,7 +731,7 @@ export function createIterationLoop(
       }
     }
 
-    // Handle assistant message - clear waiting flag when AI starts responding
+    // Handle assistant message - clear iteration lock when AI starts responding
     if (event.type === "message.updated" || event.type === "message.part.updated") {
       const info = props?.info as { sessionID?: string; role?: string } | undefined
       const sessionID = info?.sessionID || (props?.part as { sessionID?: string })?.sessionID
@@ -635,9 +739,9 @@ export function createIterationLoop(
 
       if (sessionID && role === "assistant") {
         const sessionState = getSessionState(sessionID)
-        if (sessionState.waitingForResponse) {
-          logger.debug("[message.updated] AI responding, clearing waiting flag", { sessionID })
-          sessionState.waitingForResponse = false
+        if (sessionState.iterationInProgress) {
+          logger.debug("[message.updated] AI responding, clearing iteration lock", { sessionID })
+          sessionState.iterationInProgress = false
         }
       }
     }
@@ -666,18 +770,20 @@ export function createIterationLoop(
     }
 
     const maxIterations = parsed.maxIterations ?? defaultMaxIterations
-    const marker = parsed.marker ?? defaultCompletionMarker
 
-    // Start the loop
+    // Start the loop (codename is auto-generated inside startLoop)
     const success = startLoop(sessionID, parsed.task, {
       maxIterations,
-      completionMarker: marker,
     })
 
     if (!success) {
       logger.error("Failed to start iteration loop from prompt tag", { sessionID })
       return { shouldIntercept: false, modifiedPrompt: prompt }
     }
+
+    // Get the generated codename from state
+    const state = getState()
+    const marker = state?.completion_marker ?? "UNKNOWN"
 
     // Build the modified prompt
     const modifiedPrompt = buildIterationStartPrompt(
@@ -687,7 +793,7 @@ export function createIterationLoop(
       parsed.cleanedPrompt
     )
 
-    logger.info("Iteration loop started from prompt tag", {
+    logger.debug("Iteration loop started from prompt tag", {
       sessionID,
       task: parsed.task,
       maxIterations,
@@ -707,6 +813,7 @@ export function createIterationLoop(
     handler,
     startLoop,
     cancelLoop,
+    completeLoop,
     getState,
     processPrompt,
   }

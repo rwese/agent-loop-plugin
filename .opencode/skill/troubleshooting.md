@@ -132,6 +132,43 @@ INSTRUCTIONS:
 
 **Solution:** Call `markRecoveryComplete()` or restart session
 
+## Issue: Iteration Loop Continues After Task Complete
+
+**Symptom:** Loop keeps iterating even though task is done
+
+**Cause:** Agent didn't call `iteration_loop_complete` tool
+
+**Solution:** Ensure the agent calls the tool:
+
+```json
+{
+  "name": "iteration_loop_complete",
+  "arguments": {
+    "summary": "Task completed successfully"
+  }
+}
+```
+
+## Issue: Multiple Iteration Prompts Firing
+
+**Symptom:** Multiple "ITERATION LOOP - ITERATION X/Y" prompts appear simultaneously
+
+**Cause (pre-v1.4.0):** Race condition - multiple `session.idle` events firing before lock set
+
+**Solution (v1.4.0):** Added `iterationInProgress` lock that's set immediately
+
+## Issue: Agent Uses Wrong Completion Method
+
+**Symptom:** Agent outputs `<completion>MARKER</completion>` text instead of calling tool
+
+**Cause:** Agent following old instructions or pattern matching from previous messages
+
+**Solution:**
+
+1. Ensure plugin is updated with `iteration_loop_complete` tool
+2. Auto-generated codenames prevent pattern matching
+3. Continuation prompt now instructs to use the tool
+
 ## Debugging Checklist
 
 1. [ ] Is debug logging enabled? (`AGENT_LOOP_LOG_LEVEL=debug`)
@@ -141,6 +178,7 @@ INSTRUCTIONS:
 5. [ ] Check for recovery mode in logs
 6. [ ] Verify todos exist and are incomplete
 7. [ ] Check if countdown is being cancelled (user message?)
+8. [ ] For Iteration Loop: Is `iteration_loop_complete` tool available?
 
 ## Log Message Reference
 

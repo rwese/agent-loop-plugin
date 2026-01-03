@@ -8,14 +8,13 @@
  *
  * Features:
  * - Task Loop: Automatically continues sessions when incomplete tasks remain
- * - Iteration Loop: Iteration-based loop that continues until completion marker
+ * - Iteration Loop: Iteration-based loop with tool-based completion
  *
  * Configuration via environment variables:
  * - AGENT_LOOP_COUNTDOWN_SECONDS: Countdown before auto-continue (default: 5)
  * - AGENT_LOOP_ERROR_COOLDOWN_MS: Error cooldown in ms (default: 3000)
  * - AGENT_LOOP_TOAST_DURATION_MS: Toast duration in ms (default: 900)
- * - AGENT_LOOP_MAX_ITERATIONS: Default max iterations (default: 50)
- * - AGENT_LOOP_COMPLETION_MARKER: Default completion marker (default: "DONE")
+ * - AGENT_LOOP_MAX_ITERATIONS: Default max iterations (default: 10)
  * - AGENT_LOOP_LOG_LEVEL: Log level - silent|error|warn|info|debug (default: "info")
  * - AGENT_LOOP_HELP_AGENT: Subagent name for help/feedback (e.g., "advisor")
  */
@@ -55,8 +54,7 @@ export const AgentLoopPlugin = async ({ directory, client }) => {
     errorCooldownMs: parseInt(process.env.AGENT_LOOP_ERROR_COOLDOWN_MS || "3000", 10),
     toastDurationMs: parseInt(process.env.AGENT_LOOP_TOAST_DURATION_MS || "900", 10),
     defaultMaxIterations: parseInt(process.env.AGENT_LOOP_MAX_ITERATIONS || "10", 10),
-    defaultCompletionMarker: process.env.AGENT_LOOP_COMPLETION_MARKER || "DONE",
-    logLevel: process.env.AGENT_LOOP_LOG_LEVEL || "INFO",
+    logLevel: process.env.AGENT_LOOP_LOG_LEVEL || "info",
     // Name of subagent for help/feedback (e.g., "advisor")
     helpAgent: process.env.AGENT_LOOP_HELP_AGENT || "advisor",
   }
@@ -139,13 +137,12 @@ export const AgentLoopPlugin = async ({ directory, client }) => {
     }
   }
 
-  // Create Iteration Loop - continues until completion marker detected
+  // Create Iteration Loop - continues until completion tool is called
   // Use onContinue callback so plugin handles the prompt injection (library direct calls may not work in plugin environment)
   const iterationLoop = createIterationLoop(ctx, {
     defaultMaxIterations: config.defaultMaxIterations,
-    defaultCompletionMarker: config.defaultCompletionMarker,
     logLevel: config.logLevel,
-    onContinue: ({ sessionID, iteration, maxIterations, marker, inject }) => {
+    onContinue: ({ sessionID, inject }) => {
       cancelIteration(sessionID)
 
       let aborted = false
@@ -173,50 +170,70 @@ export const AgentLoopPlugin = async ({ directory, client }) => {
     // Custom tools for iteration loop control
     tool: {
       iteration_loop_start: tool({
-        description: `Start an iteration loop for a complex task. The loop will continue until you output <completion>MARKER</completion> or max iterations reached. Use this when you see <iterationLoop> tags in user prompts, or when a task requires multiple iterations to complete.`,
+        description: `Start an iteration loop for a complex task. The loop will continue until you call iteration_loop_complete or max iterations reached. Use this when you see <iterationLoop> tags in user prompts, or when a task requires multiple iterations to complete.`,
         args: {
           task: tool.schema.string().describe("The task to work on iteratively"),
           maxIterations: tool.schema
             .number()
             .optional()
             .describe("Maximum number of iterations (default: 10)"),
-          completionMarker: tool.schema
-            .string()
-            .optional()
-            .describe("The marker to output when complete (default: DONE)"),
         },
         async execute(args, toolCtx) {
           const sessionID = toolCtx.sessionID
           const maxIterations = args.maxIterations || config.defaultMaxIterations
-          const marker = args.completionMarker || config.defaultCompletionMarker
 
           const success = iterationLoop.startLoop(sessionID, args.task, {
             maxIterations,
-            completionMarker: marker,
           })
 
           if (!success) {
             return `Failed to start iteration loop. There may already be an active loop.`
           }
 
+          // Get the generated codename
+          const state = iterationLoop.getState()
+          const codename = state?.completion_marker || "UNKNOWN"
+
           return `Iteration loop started successfully!
 
 Task: ${args.task}
 Max Iterations: ${maxIterations}
-Completion Marker: ${marker}
+Codename: ${codename}
 
 IMPORTANT:
-
-- Review the Requirements of the current TASK and validate the state.
-- When this task is FULLY complete, you MUST output: <completion>${marker}</completion>
+- When this task is FULLY complete, call the iteration_loop_complete tool
 - The loop will automatically continue when the session goes idle
 
 Begin working on this task now.`
         },
       }),
 
+      iteration_loop_complete: tool({
+        description:
+          "Signal that the iteration loop task is complete. Call this when you have fully completed the task.",
+        args: {
+          summary: tool.schema
+            .string()
+            .optional()
+            .describe("Optional summary of what was accomplished"),
+        },
+        async execute(args, toolCtx) {
+          const sessionID = toolCtx.sessionID
+          const result = iterationLoop.completeLoop(sessionID, args.summary)
+
+          if (!result.success) {
+            return result.message
+          }
+
+          return `Iteration loop completed successfully!
+
+Iterations: ${result.iterations}
+${args.summary ? `Summary: ${args.summary}` : ""}`
+        },
+      }),
+
       iteration_loop_cancel: tool({
-        description: "Cancel the active iteration loop",
+        description: "Cancel the active iteration loop (use when abandoning the task)",
         args: {},
         async execute(_args, toolCtx) {
           const sessionID = toolCtx.sessionID
@@ -243,7 +260,7 @@ Begin working on this task now.`
           return `Iteration Loop Status:
 - Active: ${state.active}
 - Iteration: ${state.iteration}/${state.max_iterations}
-- Completion Marker: ${state.completion_marker}
+- Codename: ${state.completion_marker}
 - Started At: ${state.started_at}
 - Task: ${state.prompt}`
         },

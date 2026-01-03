@@ -7,7 +7,7 @@ TypeScript library providing agent loop mechanisms for OpenCode plugins. Extract
 **Two main components:**
 
 1. **Task Loop** - Automatically continues sessions when incomplete todos remain
-2. **Iteration Loop** - Continues iteration until a completion marker is detected
+2. **Iteration Loop** - Continues iteration until `iteration_loop_complete` tool is called
 
 ## Code Style
 
@@ -101,9 +101,24 @@ git push && git push --tags
 
 The loops respond to these OpenCode events:
 
-| Event             | Task Loop             | Iteration Loop        |
-| ----------------- | --------------------- | --------------------- |
-| `session.idle`    | Check todos, continue | Check marker, iterate |
-| `session.error`   | Pause continuation    | Mark recovering       |
-| `session.deleted` | Clean up state        | Clear loop state      |
-| `message.updated` | Cancel countdown      | -                     |
+| Event             | Task Loop             | Iteration Loop          |
+| ----------------- | --------------------- | ----------------------- |
+| `session.idle`    | Check todos, continue | Prompt to continue/done |
+| `session.error`   | Pause continuation    | Mark recovering         |
+| `session.deleted` | Clean up state        | Clear loop state        |
+| `message.updated` | Cancel countdown      | Clear iteration lock    |
+
+## Iteration Loop Completion
+
+The agent signals completion by calling the `iteration_loop_complete` tool:
+
+```typescript
+// In tool handler:
+iterationLoop.completeLoop(sessionID, "Task completed successfully")
+```
+
+**Key features:**
+
+- Auto-generated codenames (e.g., "CRIMSON_FALCON") prevent pattern matching
+- Tool-based completion is more reliable than text markers
+- Unique codename per loop prevents models from copying previous markers

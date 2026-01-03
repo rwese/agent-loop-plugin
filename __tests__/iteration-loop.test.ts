@@ -69,7 +69,6 @@ describe("IterationLoop", () => {
     it("should create iteration loop with custom options", () => {
       const iterationLoop = createIterationLoop(mockContext, {
         defaultMaxIterations: 50,
-        defaultCompletionMarker: "TASK_COMPLETE",
         stateFilePath: "custom/state.md",
       })
 
@@ -127,17 +126,16 @@ describe("IterationLoop", () => {
       expect(writtenContent).toContain("max_iterations: 20")
     })
 
-    it("should use custom completion marker when provided", () => {
+    it("should auto-generate unique codename for completion marker", () => {
       mockExistsSync.mockReturnValue(true)
       mockWriteFileSync.mockImplementation(() => {})
 
       const iterationLoop = createIterationLoop(mockContext)
-      iterationLoop.startLoop("session-123", "Build a REST API", {
-        completionMarker: "API_READY",
-      })
+      iterationLoop.startLoop("session-123", "Build a REST API")
 
       const writtenContent = mockWriteFileSync.mock.calls[0][1] as string
-      expect(writtenContent).toContain('completion_marker: "API_READY"')
+      // Should contain a generated codename (ADJECTIVE_NOUN format)
+      expect(writtenContent).toMatch(/completion_marker: "[A-Z]+_[A-Z]+"/)
     })
   })
 
@@ -188,6 +186,81 @@ Prompt`)
       const result = iterationLoop.cancelLoop("session-123")
 
       expect(result).toBe(false)
+      expect(mockUnlinkSync).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("completeLoop", () => {
+    it("should complete loop and return success with iteration count", () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 5
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z"
+session_id: "session-123"
+---
+Prompt`)
+      mockUnlinkSync.mockImplementation(() => {})
+
+      const iterationLoop = createIterationLoop(mockContext)
+      const result = iterationLoop.completeLoop("session-123")
+
+      expect(result.success).toBe(true)
+      expect(result.iterations).toBe(5)
+      expect(result.message).toContain("5 iteration(s)")
+      expect(mockUnlinkSync).toHaveBeenCalled()
+    })
+
+    it("should include summary in result message when provided", () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 3
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z"
+session_id: "session-123"
+---
+Prompt`)
+      mockUnlinkSync.mockImplementation(() => {})
+
+      const iterationLoop = createIterationLoop(mockContext)
+      const result = iterationLoop.completeLoop("session-123", "All tests passing")
+
+      expect(result.success).toBe(true)
+      expect(result.message).toContain("All tests passing")
+    })
+
+    it("should return failure when no active loop exists", () => {
+      mockExistsSync.mockReturnValue(false)
+
+      const iterationLoop = createIterationLoop(mockContext)
+      const result = iterationLoop.completeLoop("session-123")
+
+      expect(result.success).toBe(false)
+      expect(result.iterations).toBe(0)
+      expect(result.message).toContain("No active iteration loop")
+    })
+
+    it("should return failure when session ID does not match", () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(`---
+active: true
+iteration: 5
+max_iterations: 100
+completion_marker: "DONE"
+started_at: "2024-01-01T00:00:00.000Z"
+session_id: "different-session"
+---
+Prompt`)
+
+      const iterationLoop = createIterationLoop(mockContext)
+      const result = iterationLoop.completeLoop("session-123")
+
+      expect(result.success).toBe(false)
+      expect(result.message).toContain("does not match")
       expect(mockUnlinkSync).not.toHaveBeenCalled()
     })
   })
@@ -735,8 +808,8 @@ Prompt`)
     })
   })
 
-  describe("waitingForResponse race condition handling", () => {
-    it("should skip iteration when already waiting for response", async () => {
+  describe("iteration lock race condition handling", () => {
+    it("should skip iteration when one is already in progress", async () => {
       // Setup initial state
       mockExistsSync.mockReturnValue(true)
       mockReadFileSync.mockReturnValue(`---

@@ -169,8 +169,6 @@ export interface IterationContinueCallbackInfo {
 export interface IterationLoopOptions {
   /** Default maximum iterations if not specified in startLoop() or prompt tag */
   defaultMaxIterations?: number
-  /** Default completion marker if not specified in startLoop() or prompt tag */
-  defaultCompletionMarker?: string
   /** Custom path for the state file (relative to session directory) */
   stateFilePath?: string
   /** Custom logger instance */

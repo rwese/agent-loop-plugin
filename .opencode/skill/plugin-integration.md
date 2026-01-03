@@ -102,9 +102,10 @@ export AGENT_LOOP_COUNTDOWN_SECONDS=5       # Countdown before auto-continue
 export AGENT_LOOP_ERROR_COOLDOWN_MS=3000    # Pause after errors
 export AGENT_LOOP_TOAST_DURATION_MS=900     # Toast display duration
 export AGENT_LOOP_MAX_ITERATIONS=50         # Max iterations for iteration loop
-export AGENT_LOOP_COMPLETION_MARKER=DONE    # Completion marker for iteration loop
 export AGENT_LOOP_HELP_AGENT=advisor        # Subagent for AI to ask questions (optional)
 ```
+
+Note: Completion markers are auto-generated as unique codenames (e.g., "CRIMSON_FALCON").
 
 ### Help Agent
 
@@ -199,8 +200,9 @@ Returns `TaskLoop` with:
 Returns `IterationLoop` with:
 
 - `handler({ event })` - Process OpenCode events
-- `startLoop(sessionID, prompt, options)` - Start iteration loop
-- `cancelLoop(sessionID)` - Cancel loop
+- `startLoop(sessionID, prompt, options)` - Start iteration loop (codename auto-generated)
+- `completeLoop(sessionID, summary?)` - Complete the loop (preferred way to stop)
+- `cancelLoop(sessionID)` - Cancel loop (abandon task)
 - `getState()` - Get current state
 
 ### sendIgnoredMessage(client, sessionID, text)

@@ -128,6 +128,97 @@ export function isAbortError(error: unknown): boolean {
 const DEFAULT_STATE_FILE = ".agent-loop/iteration-state.md"
 
 /**
+ * Word lists for generating mission codenames (inspired by intelligence agency naming conventions)
+ * Format: ADJECTIVE + NOUN (e.g., "SILENT THUNDER", "CRIMSON FALCON")
+ */
+const CODENAME_ADJECTIVES = [
+  "SILENT",
+  "CRIMSON",
+  "SHADOW",
+  "IRON",
+  "GOLDEN",
+  "ARCTIC",
+  "PHANTOM",
+  "STEEL",
+  "MIDNIGHT",
+  "COBALT",
+  "VELVET",
+  "THUNDER",
+  "SILVER",
+  "OBSIDIAN",
+  "SCARLET",
+  "AZURE",
+  "ONYX",
+  "AMBER",
+  "JADE",
+  "RAVEN",
+  "FROST",
+  "EMBER",
+  "STORM",
+  "LUNAR",
+  "SOLAR",
+  "NOBLE",
+  "SWIFT",
+  "BOLD",
+  "DARK",
+  "BRIGHT",
+] as const
+
+const CODENAME_NOUNS = [
+  "THUNDER",
+  "FALCON",
+  "SERPENT",
+  "PHOENIX",
+  "DRAGON",
+  "EAGLE",
+  "WOLF",
+  "TIGER",
+  "VIPER",
+  "HAWK",
+  "LION",
+  "PANTHER",
+  "COBRA",
+  "CONDOR",
+  "JAGUAR",
+  "SPHINX",
+  "GRIFFIN",
+  "HYDRA",
+  "KRAKEN",
+  "TITAN",
+  "ORACLE",
+  "SENTINEL",
+  "GUARDIAN",
+  "SPECTRE",
+  "CIPHER",
+  "VECTOR",
+  "NEXUS",
+  "APEX",
+  "PRISM",
+  "VERTEX",
+] as const
+
+/**
+ * Generate a unique mission codename for iteration loop completion markers.
+ *
+ * Uses a combination of adjective + noun (e.g., "CRIMSON_FALCON", "SILENT_THUNDER")
+ * to create memorable, unique identifiers that prevent models from pattern-matching
+ * on previous completion markers.
+ *
+ * @returns A unique codename string (e.g., "MIDNIGHT_PHOENIX")
+ *
+ * @example
+ * ```typescript
+ * const marker = generateCodename();
+ * // Returns something like "SHADOW_VIPER" or "ARCTIC_SENTINEL"
+ * ```
+ */
+export function generateCodename(): string {
+  const adjective = CODENAME_ADJECTIVES[Math.floor(Math.random() * CODENAME_ADJECTIVES.length)]
+  const noun = CODENAME_NOUNS[Math.floor(Math.random() * CODENAME_NOUNS.length)]
+  return `${adjective}_${noun}`
+}
+
+/**
  * Get the full path to the iteration loop state file
  *
  * @param directory - The session directory
