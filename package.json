@@ -65,6 +65,7 @@
     "url": "https://codeberg.org/nope-at/oc-agent-loop.git"
   },
   "lint-staged": {
-    "*.{ts,js,json,md}": "prettier --write"
+    "*.{ts,js,json,md}": "prettier --write",
+    "*.ts": "npm test -- --run"
   }
 }

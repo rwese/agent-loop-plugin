@@ -566,9 +566,14 @@ session_id: "session-123"
 Prompt`)
 
       const onContinueFn = vi.fn()
+      const onEvaluatorFn = vi.fn().mockResolvedValue({
+        isComplete: false,
+        feedback: "Continue working",
+      })
 
       const iterationLoop = createIterationLoop(mockContext, {
         onContinue: onContinueFn,
+        onEvaluator: onEvaluatorFn,
       })
 
       const event: LoopEvent = {
@@ -578,6 +583,7 @@ Prompt`)
 
       await iterationLoop.handler({ event })
 
+      expect(onEvaluatorFn).toHaveBeenCalled()
       expect(onContinueFn).toHaveBeenCalled()
       const callbackInfo = onContinueFn.mock.calls[0][0]
       expect(callbackInfo).toHaveProperty("sessionID", "session-123")
@@ -827,7 +833,12 @@ session_id: "session-123"
 ---
 Prompt`)
 
-      const iterationLoop = createIterationLoop(mockContext)
+      const iterationLoop = createIterationLoop(mockContext, {
+        onEvaluator: vi.fn().mockResolvedValue({
+          isComplete: false,
+          feedback: "Continue",
+        }),
+      })
 
       // First idle event - should process
       const event1: LoopEvent = {
@@ -864,7 +875,12 @@ session_id: "session-123"
 ---
 Prompt`)
 
-      const iterationLoop = createIterationLoop(mockContext)
+      const iterationLoop = createIterationLoop(mockContext, {
+        onEvaluator: vi.fn().mockResolvedValue({
+          isComplete: false,
+          feedback: "Continue",
+        }),
+      })
 
       // First idle event - sets waiting flag
       const idleEvent: LoopEvent = {
@@ -911,7 +927,12 @@ session_id: "session-123"
 ---
 Prompt`)
 
-      const iterationLoop = createIterationLoop(mockContext)
+      const iterationLoop = createIterationLoop(mockContext, {
+        onEvaluator: vi.fn().mockResolvedValue({
+          isComplete: false,
+          feedback: "Continue",
+        }),
+      })
 
       const event: LoopEvent = {
         type: "session.idle",
