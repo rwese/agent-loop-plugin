@@ -194,9 +194,7 @@ interface PluginContext {
         query?: { directory: string }
       }): Promise<void>
       todo(opts: { path: { id: string } }): Promise<Todo[] | { data: Todo[] }>
-      messages(opts: {
-        path: { id: string }
-      }): Promise<
+      messages(opts: { path: { id: string } }): Promise<
         Array<{
           info: {
             agent?: string
@@ -501,6 +499,12 @@ export function createTaskContinuation(
     }
 
     const prompt = buildContinuationPrompt(todos)
+
+    // Brief delay to allow agent/model from message events to be captured
+    // This is a timing fix - message events may arrive after session.idle but before continuation
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // Re-fetch agent/model right before continuation to get latest values
     const { agent: continuationAgent, model: continuationModel } = await getAgentModel(sessionID)
 
     if (typeof logger !== "undefined" && logger) {
