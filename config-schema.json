@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Loop Plugin Configuration",
+  "description": "Configuration file for agent-loop-plugin",
+  "type": "object",
+  "properties": {
+    "taskLoop": {
+      "type": "boolean",
+      "description": "Enable task loop functionality",
+      "default": true
+    },
+    "iterationLoop": {
+      "type": "boolean",
+      "description": "Enable iteration loop functionality",
+      "default": true
+    },
+    "countdownSeconds": {
+      "type": "integer",
+      "description": "Default countdown seconds before auto-continuation",
+      "minimum": 0,
+      "default": 2
+    },
+    "errorCooldownMs": {
+      "type": "integer",
+      "description": "Cooldown period in ms after errors",
+      "minimum": 0,
+      "default": 3000
+    },
+    "toastDurationMs": {
+      "type": "integer",
+      "description": "Toast notification duration in ms",
+      "minimum": 0,
+      "default": 900
+    },
+    "agent": {
+      "type": ["string", "null"],
+      "description": "Agent name for continuation prompts"
+    },
+    "model": {
+      "type": ["string", "null"],
+      "description": "Model name for continuation prompts"
+    },
+    "debug": {
+      "type": "boolean",
+      "description": "Enable debug logging",
+      "default": true
+    }
+  },
+  "additionalProperties": false,
+  "default": {
+    "taskLoop": true,
+    "iterationLoop": true,
+    "countdownSeconds": 2,
+    "errorCooldownMs": 3000,
+    "toastDurationMs": 900,
+    "agent": null,
+    "model": null,
+    "debug": true
+  }
+}

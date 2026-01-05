@@ -1,0 +1,12 @@
+{
+  "$schema": "./config-schema.json",
+  "description": "Default configuration for agent-loop-plugin",
+  "taskLoop": true,
+  "iterationLoop": true,
+  "countdownSeconds": 2,
+  "errorCooldownMs": 3000,
+  "toastDurationMs": 900,
+  "agent": null,
+  "model": null,
+  "debug": true
+}

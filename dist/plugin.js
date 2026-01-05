@@ -1,14 +1,5 @@
 import { createTaskContinuation } from "./task-continuation.js"
-const DEFAULT_OPTIONS = {
-  taskLoop: true,
-  iterationLoop: true,
-  countdownSeconds: 2,
-  errorCooldownMs: 3000,
-  toastDurationMs: 900,
-  agent: undefined,
-  model: undefined,
-  debug: false,
-}
+import { getEffectiveConfig, getConfigSourceInfo } from "./config.js"
 function createLogger(debug) {
   return {
     debug: (message, data) => {
@@ -42,10 +33,15 @@ function extractSessionID(event) {
   return undefined
 }
 export function createAgentLoopPlugin(options = {}) {
-  const config = { ...DEFAULT_OPTIONS, ...options }
+  const config = getEffectiveConfig(options)
   const logger = createLogger(config.debug ?? false)
   return async (ctx) => {
-    logger.info("Initializing agent-loop-plugin", { directory: ctx.directory })
+    const configSource = getConfigSourceInfo()
+    logger.info("Initializing agent-loop-plugin", {
+      directory: ctx.directory,
+      configSource: configSource.source,
+      configPath: configSource.path,
+    })
     const sessionState = new Map()
     if (config.taskLoop) {
       logger.info("Task loop enabled", {

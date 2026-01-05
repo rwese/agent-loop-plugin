@@ -26,6 +26,7 @@
 
 import type { LoopEvent, PluginContext, TaskContinuationOptions } from "./types.js"
 import { createTaskContinuation } from "./task-continuation.js"
+import { getEffectiveConfig, getConfigSourceInfo } from "./config.js"
 
 /**
  * Plugin configuration options
@@ -47,20 +48,6 @@ export interface AgentLoopPluginOptions {
   model?: string
   /** Enable debug logging */
   debug?: boolean
-}
-
-/**
- * Default plugin configuration
- */
-const DEFAULT_OPTIONS: AgentLoopPluginOptions = {
-  taskLoop: true,
-  iterationLoop: true,
-  countdownSeconds: 2,
-  errorCooldownMs: 3000,
-  toastDurationMs: 900,
-  agent: undefined,
-  model: undefined,
-  debug: false,
 }
 
 /**
@@ -107,11 +94,16 @@ function extractSessionID(event: LoopEvent): string | undefined {
  * Create the agent loop plugin
  */
 export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
-  const config = { ...DEFAULT_OPTIONS, ...options }
+  const config = getEffectiveConfig(options)
   const logger = createLogger(config.debug ?? false)
 
   return async (ctx: PluginContext) => {
-    logger.info("Initializing agent-loop-plugin", { directory: ctx.directory })
+    const configSource = getConfigSourceInfo()
+    logger.info("Initializing agent-loop-plugin", {
+      directory: ctx.directory,
+      configSource: configSource.source,
+      configPath: configSource.path,
+    })
 
     // Track session state
     const sessionState = new Map<
