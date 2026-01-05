@@ -1,5 +1,5 @@
 {
-  "name": "agent-loop-plugin",
+  "name": "@rwese/agent-loop-plugin",
   "version": "4.1.0",
   "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
   "type": "module",
@@ -8,12 +8,11 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.js"
     },
     "./plugin": {
-      "types": "./.opencode/plugin/index.d.ts",
-      "import": "./.opencode/plugin/index.js"
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
     }
   },
   "engines": {
@@ -60,16 +59,17 @@
   },
   "files": [
     "dist",
-    ".opencode/plugin",
+    "plugin.ts",
     "README.md",
     "CHANGELOG.md"
   ],
   "repository": {
     "type": "git",
-    "url": "ssh://git@codeberg.org/nope-at/oc-agent-loop.git"
+    "url": "git+https://github.com/rwese/agent-loop-plugin.git"
   },
   "publishConfig": {
-    "registry": "https://codeberg.org/api/packages/npm"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "opencode": {
     "name": "agent-loop-plugin",
@@ -77,9 +77,13 @@
     "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
     "author": "OpenCode Community",
     "license": "MIT",
-    "repository": "ssh://git@codeberg.org:nope-at/oc-agent-loop.git",
-    "bugs": "https://codeberg.org/nope-at/oc-agent-loop/issues",
-    "homepage": "https://codeberg.org/nope-at/oc-agent-loop"
+    "repository": "https://github.com/rwese/agent-loop-plugin",
+    "bugs": "https://github.com/rwese/agent-loop-plugin/issues",
+    "homepage": "https://github.com/rwese/agent-loop-plugin"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/rwese"
   },
   "lint-staged": {
     "*.{ts,js,json,md}": "prettier --write",
