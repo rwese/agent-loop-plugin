@@ -550,6 +550,18 @@ export function createTaskContinuation(
   }
 
   const handleUserMessage = async (sessionID: string, event?: LoopEvent): Promise<void> => {
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("handleUserMessage called", {
+        sessionID,
+        eventType: event?.type,
+        hasProperties: !!event?.properties,
+        propertiesKeys: event?.properties ? Object.keys(event.properties) : [],
+        hasInfo: !!event?.properties?.info,
+        infoKeys: event?.properties?.info ? Object.keys(event.properties.info) : [],
+        rawEvent: JSON.stringify(event),
+      })
+    }
+
     // Clear error cooldown on user message
     errorCooldowns.delete(sessionID)
 
@@ -563,11 +575,31 @@ export function createTaskContinuation(
     // Capture agent/model from user message if available
     if (event?.properties?.info) {
       const info = event.properties.info
+
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Processing message event info", {
+          sessionID,
+          infoType: typeof info,
+          infoKeys: Object.keys(info ?? {}),
+          agentField: (info as { agent?: string })?.agent,
+          modelField: (info as { model?: string })?.model,
+          roleField: (info as { role?: string })?.role,
+          fullInfo: JSON.stringify(info),
+        })
+      }
+
       // The agent/model might be in the info object or in the event properties
       const messageAgent = (info as { agent?: string }).agent
       const messageModel = (info as { model?: string | ModelSpec }).model
 
       if (messageAgent || messageModel) {
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Captured agent/model from message", {
+            sessionID,
+            agent: messageAgent,
+            model: messageModel,
+          })
+        }
         updateSessionAgentModel(sessionID, messageAgent, messageModel)
       }
     }

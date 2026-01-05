@@ -302,6 +302,17 @@ export function createTaskContinuation(ctx, options = {}) {
     }
   }
   const handleUserMessage = async (sessionID, event) => {
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("handleUserMessage called", {
+        sessionID,
+        eventType: event?.type,
+        hasProperties: !!event?.properties,
+        propertiesKeys: event?.properties ? Object.keys(event.properties) : [],
+        hasInfo: !!event?.properties?.info,
+        infoKeys: event?.properties?.info ? Object.keys(event.properties.info) : [],
+        rawEvent: JSON.stringify(event),
+      })
+    }
     errorCooldowns.delete(sessionID)
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
@@ -310,9 +321,27 @@ export function createTaskContinuation(ctx, options = {}) {
     }
     if (event?.properties?.info) {
       const info = event.properties.info
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Processing message event info", {
+          sessionID,
+          infoType: typeof info,
+          infoKeys: Object.keys(info ?? {}),
+          agentField: info?.agent,
+          modelField: info?.model,
+          roleField: info?.role,
+          fullInfo: JSON.stringify(info),
+        })
+      }
       const messageAgent = info.agent
       const messageModel = info.model
       if (messageAgent || messageModel) {
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Captured agent/model from message", {
+            sessionID,
+            agent: messageAgent,
+            model: messageModel,
+          })
+        }
         updateSessionAgentModel(sessionID, messageAgent, messageModel)
       }
     }
