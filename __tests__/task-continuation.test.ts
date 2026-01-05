@@ -3,11 +3,20 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import type { Todo, LoopEvent } from "../task-continuation.js"
+import type { PluginContext, Todo, LoopEvent } from "../types.js"
 import { createTaskContinuation } from "../task-continuation.js"
 
+interface PromptCall {
+  body: {
+    parts: Array<{
+      ignored?: boolean
+      text: string
+    }>
+  }
+}
+
 // Create a mock context
-function createMockContext(): any {
+function createMockContext(): PluginContext {
   const mockSession = {
     id: "test-session",
     get: vi.fn(),
@@ -23,7 +32,7 @@ function createMockContext(): any {
   return {
     directory: "/test/directory",
     client: {
-      session: mockSession as any,
+      session: mockSession as PluginContext["client"]["session"],
       tui: mockTui,
     },
   }
@@ -121,21 +130,36 @@ describe("TaskContinuation", () => {
 
   it("should send completion message when all todos are complete", async () => {
     const ctx = createMockContext()
-    ;(ctx.client.session.todo as any).mockResolvedValue(createMockTodos(3, 0))
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(3, 0))
 
     const taskContinuation = createTaskContinuation(ctx)
     await taskContinuation.handler({ event: createIdleEvent("session-123") })
 
     // Should send a completion status message (ignored: true)
     expect(ctx.client.session.prompt).toHaveBeenCalled()
-    const call = (ctx.client.session.prompt as any).mock.calls[0][0]
+    interface PromptCall {
+      body: {
+        parts: Array<{
+          ignored?: boolean
+          text: string
+        }>
+      }
+    }
+    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
+    const call: PromptCall = promptCall
     expect(call.body.parts[0].ignored).toBe(true)
     expect(call.body.parts[0].text).toContain("completed")
   })
 
   it("should inject continuation when incomplete todos remain", async () => {
     const ctx = createMockContext()
-    ;(ctx.client.session.todo as any).mockResolvedValue(createMockTodos(1, 2))
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(1, 2))
 
     const taskContinuation = createTaskContinuation(ctx)
     await taskContinuation.handler({ event: createIdleEvent("session-123") })
@@ -145,7 +169,8 @@ describe("TaskContinuation", () => {
     expect(ctx.client.session.prompt).toHaveBeenCalled()
 
     // The continuation prompt should NOT be ignored (it needs to be in context)
-    const call = (ctx.client.session.prompt as any).mock.calls[0][0]
+    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
+    const call: PromptCall = promptCall
     expect(call.body.parts[0].ignored).toBeUndefined()
     expect(call.body.parts[0].text).toContain("AUTO-CONTINUATION")
   })
@@ -161,7 +186,10 @@ describe("TaskContinuation", () => {
 
   it("should prevent continuation when session is recovering", async () => {
     const ctx = createMockContext()
-    ;(ctx.client.session.todo as any).mockResolvedValue(createMockTodos(0, 1))
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
 
     const taskContinuation = createTaskContinuation(ctx)
     taskContinuation.markRecovering("session-123")
@@ -173,7 +201,10 @@ describe("TaskContinuation", () => {
 
   it("should re-enable continuation after recovery completes", async () => {
     const ctx = createMockContext()
-    ;(ctx.client.session.todo as any).mockResolvedValue(createMockTodos(0, 1))
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
 
     const taskContinuation = createTaskContinuation(ctx)
     taskContinuation.markRecovering("session-123")
@@ -186,7 +217,10 @@ describe("TaskContinuation", () => {
 
   it("should prevent continuation during error cooldown", async () => {
     const ctx = createMockContext()
-    ;(ctx.client.session.todo as any).mockResolvedValue(createMockTodos(0, 1))
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
 
     const taskContinuation = createTaskContinuation(ctx, { errorCooldownMs: 10000 })
     await taskContinuation.handler({ event: createErrorEvent("session-123") })
@@ -198,7 +232,10 @@ describe("TaskContinuation", () => {
 
   it("should allow continuation after cooldown expires", async () => {
     const ctx = createMockContext()
-    ;(ctx.client.session.todo as any).mockResolvedValue(createMockTodos(0, 1))
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
 
     const taskContinuation = createTaskContinuation(ctx, { errorCooldownMs: 100 })
     await taskContinuation.handler({ event: createErrorEvent("session-123") })
@@ -211,7 +248,10 @@ describe("TaskContinuation", () => {
 
   it("should clear error state on user message", async () => {
     const ctx = createMockContext()
-    ;(ctx.client.session.todo as any).mockResolvedValue(createMockTodos(0, 1))
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
 
     const taskContinuation = createTaskContinuation(ctx, { errorCooldownMs: 10000 })
     await taskContinuation.handler({ event: createErrorEvent("session-123") })

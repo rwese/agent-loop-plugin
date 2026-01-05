@@ -210,7 +210,7 @@ export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
       /**
        * Plugin configuration handler
        */
-      config: async (opencodeConfig: Record<string, unknown>) => {
+      config: async (_opencodeConfig: Record<string, unknown>) => {
         logger.debug("Configuring plugin")
 
         // Add any custom configuration here
