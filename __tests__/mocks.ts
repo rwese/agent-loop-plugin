@@ -14,6 +14,12 @@ export function createMockPluginContext(overrides: Partial<PluginContext> = {}):
     client: {
       session: {
         id: "mock-session-id",
+        get: vi.fn().mockResolvedValue({
+          id: "mock-session-id",
+          agent: "test-agent",
+          model: "test-model",
+        }),
+        messages: vi.fn().mockResolvedValue([]),
         prompt: vi.fn().mockResolvedValue(undefined),
         todo: vi.fn().mockResolvedValue({ data: [] }),
       },
@@ -33,6 +39,12 @@ export function createMockPluginContextWithTodos(todos: Todo[]): PluginContext {
     client: {
       session: {
         id: "mock-session-id",
+        get: vi.fn().mockResolvedValue({
+          id: "mock-session-id",
+          agent: "test-agent",
+          model: "test-model",
+        }),
+        messages: vi.fn().mockResolvedValue([]),
         prompt: vi.fn().mockResolvedValue(undefined),
         todo: vi.fn().mockResolvedValue({ data: todos }),
       },

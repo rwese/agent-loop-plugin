@@ -28,7 +28,7 @@ export interface TaskContinuation {
   handler: (input: { event: LoopEvent }) => Promise<void>
   markRecovering: (sessionID: string) => void
   markRecoveryComplete: (sessionID: string) => void
-  cleanup: (sessionID: string) => void
+  cleanup: () => Promise<void>
 }
 interface PluginContext {
   directory: string

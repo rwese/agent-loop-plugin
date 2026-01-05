@@ -1,0 +1,42 @@
+import type { LoopEvent, PluginContext } from "./types.js"
+export interface AgentLoopPluginOptions {
+  taskLoop?: boolean
+  iterationLoop?: boolean
+  countdownSeconds?: number
+  errorCooldownMs?: number
+  toastDurationMs?: number
+  agent?: string
+  model?: string
+  debug?: boolean
+}
+export declare function createAgentLoopPlugin(options?: AgentLoopPluginOptions): (
+  ctx: PluginContext
+) => Promise<{
+  event: ({ event }: { event: LoopEvent }) => Promise<void>
+  config: (opencodeConfig: Record<string, unknown>) => Promise<void>
+}>
+declare const plugin: (ctx: PluginContext) => Promise<{
+  event: ({ event }: { event: LoopEvent }) => Promise<void>
+  config: (opencodeConfig: Record<string, unknown>) => Promise<void>
+}>
+export default plugin
+export type {
+  Todo,
+  LoopEvent,
+  TaskContinuationOptions,
+  PluginContext,
+  ModelSpec,
+  PromptPart,
+  SessionInfo,
+  MessageInfo,
+  IterationLoopState,
+  CompleteLoopResult,
+  AdvisorEvaluationResult,
+  CompletionEvaluatorInfo,
+  LogLevel,
+  CountdownCallbackInfo,
+  IterationLoopOptions,
+  TaskLoopOptions,
+} from "./types.js"
+export { createTaskContinuation } from "./task-continuation.js"
+//# sourceMappingURL=plugin.d.ts.map

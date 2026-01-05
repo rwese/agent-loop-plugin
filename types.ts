@@ -253,3 +253,17 @@ export interface TaskLoopOptions {
   /** Callback invoked when countdown starts (allows plugin-controlled timing) */
   onCountdownStart?: (info: CountdownCallbackInfo) => void
 }
+
+/** Configuration options for task continuation plugin (compatibility alias) */
+export interface TaskContinuationOptions {
+  /** Seconds to wait before auto-continuation (default: 2) */
+  countdownSeconds?: number
+  /** Cooldown period in ms after errors (default: 3000) */
+  errorCooldownMs?: number
+  /** Toast notification duration in ms (default: 900) */
+  toastDurationMs?: number
+  /** Agent name for continuation prompts */
+  agent?: string
+  /** Model name for continuation prompts */
+  model?: string
+}

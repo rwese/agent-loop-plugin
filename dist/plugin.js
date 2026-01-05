@@ -1,0 +1,118 @@
+import { createTaskContinuation } from "./task-continuation.js"
+const DEFAULT_OPTIONS = {
+  taskLoop: true,
+  iterationLoop: true,
+  countdownSeconds: 2,
+  errorCooldownMs: 3000,
+  toastDurationMs: 900,
+  agent: undefined,
+  model: undefined,
+  debug: false,
+}
+function createLogger(debug) {
+  return {
+    debug: (message, data) => {
+      if (debug) {
+        console.log(`[agent-loop-plugin] DEBUG: ${message}`, data ?? "")
+      }
+    },
+    info: (message, data) => {
+      console.log(`[agent-loop-plugin] INFO: ${message}`, data ?? "")
+    },
+    warn: (message, data) => {
+      console.warn(`[agent-loop-plugin] WARN: ${message}`, data ?? "")
+    },
+    error: (message, data) => {
+      console.error(`[agent-loop-plugin] ERROR: ${message}`, data ?? "")
+    },
+  }
+}
+function extractSessionID(event) {
+  const props = event.properties
+  if (props?.sessionID && typeof props.sessionID === "string") return props.sessionID
+  if (props?.info?.sessionID && typeof props.info.sessionID === "string")
+    return props.info.sessionID
+  if (props?.info?.id && typeof props.info.id === "string") return props.info.id
+  return undefined
+}
+export function createAgentLoopPlugin(options = {}) {
+  const config = { ...DEFAULT_OPTIONS, ...options }
+  const logger = createLogger(config.debug ?? false)
+  return async (ctx) => {
+    logger.info("Initializing agent-loop-plugin", { directory: ctx.directory })
+    const sessionState = new Map()
+    if (config.taskLoop) {
+      logger.info("Task loop enabled", {
+        countdownSeconds: config.countdownSeconds,
+        errorCooldownMs: config.errorCooldownMs,
+      })
+    }
+    return {
+      event: async ({ event }) => {
+        const sessionID = extractSessionID(event)
+        if (!sessionID) {
+          logger.debug("No session ID in event", { eventType: event.type })
+          return
+        }
+        logger.debug("Processing event", { eventType: event.type, sessionID })
+        switch (event.type) {
+          case "session.idle": {
+            if (config.taskLoop) {
+              let state = sessionState.get(sessionID)
+              if (!state) {
+                state = { taskContinuation: null }
+                sessionState.set(sessionID, state)
+              }
+              if (!state.taskContinuation) {
+                const taskContinuationOptions = {
+                  countdownSeconds: config.countdownSeconds,
+                  errorCooldownMs: config.errorCooldownMs,
+                  toastDurationMs: config.toastDurationMs,
+                  agent: config.agent,
+                  model: config.model,
+                }
+                state.taskContinuation = createTaskContinuation(ctx, taskContinuationOptions)
+              }
+              await state.taskContinuation.handler({ event })
+            }
+            break
+          }
+          case "message.updated": {
+            if (config.taskLoop) {
+              const state = sessionState.get(sessionID)
+              if (state?.taskContinuation) {
+              }
+            }
+            break
+          }
+          case "session.error": {
+            if (config.taskLoop) {
+              const state = sessionState.get(sessionID)
+              if (state?.taskContinuation) {
+              }
+            }
+            break
+          }
+          case "session.deleted": {
+            const state = sessionState.get(sessionID)
+            if (state?.taskContinuation) {
+              await state.taskContinuation.cleanup()
+            }
+            sessionState.delete(sessionID)
+            logger.debug("Cleaned up session state", { sessionID })
+            break
+          }
+          default:
+            logger.debug("Unhandled event type", { eventType: event.type })
+        }
+      },
+      config: async (opencodeConfig) => {
+        logger.debug("Configuring plugin")
+      },
+    }
+  }
+}
+const plugin = createAgentLoopPlugin()
+export default plugin
+export { createTaskContinuation } from "./task-continuation.js"
+//# sourceMappingURL=plugin.js.map

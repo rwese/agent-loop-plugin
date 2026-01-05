@@ -11,11 +11,7 @@ import { createTaskContinuation, type LoopEvent } from "./index.js"
  */
 export default function examplePlugin(ctx: any) {
   // Create the task continuation handler
-  const taskContinuation = createTaskContinuation(ctx, {
-    countdownSeconds: 3,
-    errorCooldownMs: 5000,
-    toastDurationMs: 1000,
-  })
+  const taskContinuation = createTaskContinuation(ctx, {})
 
   // Wire into event system
   const handleEvent = async (event: LoopEvent) => {
@@ -26,27 +22,6 @@ export default function examplePlugin(ctx: any) {
   // ctx.on("event", handleEvent);
 
   return {
-    /**
-     * Pause task continuation during error recovery
-     */
-    pauseContinuation: (sessionID: string) => {
-      taskContinuation.markRecovering(sessionID)
-    },
-
-    /**
-     * Resume after recovery
-     */
-    resumeContinuation: (sessionID: string) => {
-      taskContinuation.markRecoveryComplete(sessionID)
-    },
-
-    /**
-     * Clean up session state
-     */
-    cleanup: (sessionID: string) => {
-      taskContinuation.cleanup(sessionID)
-    },
-
     /**
      * Event handler (for manual wiring)
      */
@@ -85,14 +60,8 @@ export function example2_ErrorRecovery(ctx: any) {
     const sessionID = event.properties?.sessionID
     if (!sessionID) return
 
-    // Pause auto-continuation during recovery
-    plugin.pauseContinuation(sessionID)
-
     // Your recovery logic here
     await new Promise((resolve) => setTimeout(resolve, 5000))
-
-    // Resume after recovery
-    plugin.resumeContinuation(sessionID)
   }
 
   return { plugin, handleError }
@@ -104,9 +73,5 @@ export function example2_ErrorRecovery(ctx: any) {
 export function example3_GracefulShutdown(ctx: any) {
   const plugin = examplePlugin(ctx)
 
-  const cleanup = (sessionID: string) => {
-    plugin.cleanup(sessionID)
-  }
-
-  return { plugin, cleanup }
+  return { plugin }
 }

@@ -171,4 +171,11 @@ export interface TaskLoopOptions {
   helpAgent?: string
   onCountdownStart?: (info: CountdownCallbackInfo) => void
 }
+export interface TaskContinuationOptions {
+  countdownSeconds?: number
+  errorCooldownMs?: number
+  toastDurationMs?: number
+  agent?: string
+  model?: string
+}
 //# sourceMappingURL=types.d.ts.map

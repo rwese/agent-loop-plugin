@@ -26,32 +26,9 @@ export function createTaskContinuation(ctx, options = {}) {
     agent,
     model,
   } = options
-  const sessions = new Map()
-  function getState(sessionID) {
-    let state = sessions.get(sessionID)
-    if (!state) {
-      state = {}
-      sessions.set(sessionID, state)
-    }
-    return state
-  }
-  function cancelCountdown(sessionID) {
-    const state = sessions.get(sessionID)
-    if (!state) return
-    if (state.countdownTimer) clearTimeout(state.countdownTimer)
-    if (state.countdownInterval) clearInterval(state.countdownInterval)
-    state.countdownTimer = undefined
-    state.countdownInterval = undefined
-  }
-  function cleanup(sessionID) {
-    cancelCountdown(sessionID)
-    sessions.delete(sessionID)
-  }
-  async function showToast(title, message, variant) {
-    await ctx.client.tui
-      .showToast({ body: { title, message, variant, duration: toastDurationMs } })
-      .catch(() => {})
-  }
+  const recoveringSessions = new Set()
+  const errorCooldowns = new Map()
+  const pendingCountdowns = new Map()
   async function sendStatus(sessionID, text) {
     try {
       await ctx.client.session.prompt({
@@ -74,14 +51,12 @@ export function createTaskContinuation(ctx, options = {}) {
       return []
     }
   }
-  function isInCooldown(sessionID) {
-    const state = sessions.get(sessionID)
-    if (state?.isRecovering) return true
-    if (state?.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) return true
-    return false
-  }
   async function injectContinuation(sessionID) {
-    if (isInCooldown(sessionID)) return
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+    }
     const todos = await fetchTodos(sessionID)
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) return
@@ -94,55 +69,66 @@ export function createTaskContinuation(ctx, options = {}) {
       })
     } catch {}
   }
-  async function startCountdown(sessionID, incompleteCount, _total) {
-    const state = getState(sessionID)
-    if (state.countdownTimer) cancelCountdown(sessionID)
-    await showToast(
-      "Task Continuation",
-      `${incompleteCount} incomplete task(s). Continuing in ${countdownSeconds}s...`,
-      "info"
-    )
-    let secondsLeft = countdownSeconds
-    state.countdownInterval = setInterval(async () => {
-      secondsLeft--
-      if (secondsLeft > 0) {
-        await showToast(
-          "Task Continuation",
-          `${incompleteCount} incomplete task(s). Continuing in ${secondsLeft}s...`,
-          "info"
-        )
-      }
-    }, 1000)
-    state.countdownTimer = setTimeout(async () => {
-      cancelCountdown(sessionID)
-      await injectContinuation(sessionID)
+  async function scheduleContinuation(sessionID) {
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+    }
+    const timeout = setTimeout(() => {
+      pendingCountdowns.delete(sessionID)
+      injectContinuation(sessionID)
     }, countdownSeconds * 1000)
+    pendingCountdowns.set(sessionID, timeout)
+    try {
+      await ctx.client.tui.showToast({
+        body: {
+          title: "Auto-Continuing",
+          message: `Continuing in ${countdownSeconds} seconds...`,
+          variant: "info",
+          duration: toastDurationMs,
+        },
+      })
+    } catch {}
   }
   const handleSessionIdle = async (sessionID) => {
-    if (isInCooldown(sessionID)) return
-    const todos = await fetchTodos(sessionID)
-    const state = getState(sessionID)
-    const incompleteCount = getIncompleteCount(todos)
-    if (incompleteCount === 0) {
-      if (!state.completionShown) {
-        state.completionShown = true
-        await sendStatus(sessionID, `✅ All ${todos.length} tasks completed!`)
-      }
+    if (recoveringSessions.has(sessionID)) {
       return
     }
-    state.completionShown = false
-    await startCountdown(sessionID, incompleteCount, todos.length)
+    const lastError = errorCooldowns.get(sessionID) ?? 0
+    if (Date.now() - lastError < errorCooldownMs) {
+      return
+    }
+    const todos = await fetchTodos(sessionID)
+    const incompleteCount = getIncompleteCount(todos)
+    if (incompleteCount === 0) {
+      await sendStatus(sessionID, `✅ All ${todos.length} tasks completed!`)
+      return
+    }
+    scheduleContinuation(sessionID)
   }
-  const handleSessionError = (sessionID) => {
-    const state = getState(sessionID)
-    state.lastErrorAt = Date.now()
-    cancelCountdown(sessionID)
+  const handleSessionError = async (sessionID) => {
+    errorCooldowns.set(sessionID, Date.now())
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+    }
   }
-  const handleUserMessage = (sessionID) => {
-    const state = sessions.get(sessionID)
-    if (state) {
-      state.lastErrorAt = undefined
-      if (state.countdownTimer) cancelCountdown(sessionID)
+  const handleUserMessage = async (sessionID) => {
+    errorCooldowns.delete(sessionID)
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+    }
+  }
+  const handleSessionDeleted = async (sessionID) => {
+    recoveringSessions.delete(sessionID)
+    errorCooldowns.delete(sessionID)
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
     }
   }
   function extractSessionID(event) {
@@ -157,29 +143,39 @@ export function createTaskContinuation(ctx, options = {}) {
     const sessionID = extractSessionID(event)
     if (!sessionID) return
     switch (event.type) {
-      case "session.error":
-        handleSessionError(sessionID)
-        break
       case "session.idle":
         await handleSessionIdle(sessionID)
         break
+      case "session.error":
+        await handleSessionError(sessionID)
+        break
       case "message.updated":
-        if (event.properties?.info?.role === "user") handleUserMessage(sessionID)
+        await handleUserMessage(sessionID)
         break
       case "session.deleted":
-        cleanup(sessionID)
+        await handleSessionDeleted(sessionID)
         break
     }
   }
   const markRecovering = (sessionID) => {
-    const state = getState(sessionID)
-    state.isRecovering = true
-    cancelCountdown(sessionID)
+    recoveringSessions.add(sessionID)
   }
   const markRecoveryComplete = (sessionID) => {
-    const state = sessions.get(sessionID)
-    if (state) state.isRecovering = false
+    recoveringSessions.delete(sessionID)
   }
-  return { handler, markRecovering, markRecoveryComplete, cleanup }
+  const cleanup = async () => {
+    for (const timeout of pendingCountdowns.values()) {
+      clearTimeout(timeout)
+    }
+    pendingCountdowns.clear()
+    recoveringSessions.clear()
+    errorCooldowns.clear()
+  }
+  return {
+    handler,
+    markRecovering,
+    markRecoveryComplete,
+    cleanup,
+  }
 }
 //# sourceMappingURL=task-continuation.js.map
