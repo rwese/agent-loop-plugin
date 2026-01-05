@@ -104,3 +104,90 @@ If commit fails due to formatting:
 1. Check the error message
 2. Run `npm run format` manually if needed
 3. Re-stage and commit
+
+## CI/CD & Publishing Issues
+
+### Issue: npm ENEEDAUTH - "This command requires you to be logged in to https://registry.npmjs.org/"
+
+**Symptom:** Build fails during publish step with:
+
+```
+npm error need auth This command requires you to be logged to https://registry.npmjs.org/
+npm error need auth You need to authorize this machine using `npm adduser`
+```
+
+**Cause:** npm is trying to publish to the default registry instead of Codeberg.
+
+**Solution:** Add `publishConfig` to `package.json`:
+
+```json
+{
+  "publishConfig": {
+    "registry": "https://codeberg.org/api/packages/npm"
+  }
+}
+```
+
+This ensures npm publishes to the correct registry regardless of `.npmrc` configuration order.
+
+### Issue: "git command not found" in CI
+
+**Symptom:** Woodpecker CI fails with:
+
+```
+/bin/sh: exec format line 1: git not found
+```
+
+**Cause:** Alpine-based Docker images (`node:22-alpine`) don't include git by default.
+
+**Solution:** Install git in each CI step:
+
+```yaml
+steps:
+  install:
+    image: node:22-alpine
+    commands:
+      - apk add --no-cache git
+      - npm ci
+```
+
+Add this to all steps that might need git (including publish step for tagging).
+
+### Issue: Tag Already Exists When Repushing
+
+**Symptom:** Failed to push tag:
+
+```
+fatal: tag 'v3.1.4' already exists
+```
+
+**Solution:** Delete remote tag and push again:
+
+```bash
+git push origin :refs/tags/v3.1.4
+git push && git push --tags
+```
+
+### Issue: .npmrc Not Working in CI
+
+**Symptom:** Registry configuration in `.npmrc` is being ignored.
+
+**Solution:** Create `.npmrc` inline in CI step before publishing:
+
+```yaml
+commands:
+  - |
+    echo "@nope-at:registry=https://codeberg.org/api/packages/npm" > .npmrc
+    echo "//codeberg.org/api/packages/npm/:_authToken=$CODEBERG_TOKEN" >> .npmrc
+  - npm publish --access public
+```
+
+This ensures the file exists with correct permissions in CI environment.
+
+### CI/CD Checklist
+
+1. [ ] Alpine images have `apk add --no-cache git` for git-dependent commands
+2. [ ] `publishConfig.registry` set in `package.json` for correct registry
+3. [ ] `.npmrc` created inline in publish step with auth token
+4. [ ] Woodpecker secrets configured (e.g., `CODEBERG_TOKEN`)
+5. [ ] Tag pushed after version bump (`git push --tags`)
