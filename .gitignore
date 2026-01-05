@@ -28,4 +28,3 @@ Thumbs.db
 
 # npm pack output
 *.tgz
-dist
