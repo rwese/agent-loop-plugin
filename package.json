@@ -1,7 +1,7 @@
 {
   "name": "agent-loop-plugin",
-  "version": "3.1.7",
-  "description": "Agent Loop Plugin - Task continuation and iteration loops for OpenCode plugins",
+  "version": "4.0.0",
+  "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -31,11 +31,7 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
-    "prepare": "husky",
-    "version:patch": "npm version patch --no-git-tag-version && npm run version:tag",
-    "version:minor": "npm version minor --no-git-tag-version && npm run version:tag",
-    "version:major": "npm version major --no-git-tag-version && npm run version:tag",
-    "version:tag": "git add package.json package-lock.json && git commit -m \"chore: bump version to $(node -p \"require('./package.json').version\")\" && git tag -m \"v$(node -p \"require('./package.json').version\")\" v$(node -p \"require('./package.json').version\")"
+    "prepare": "husky"
   },
   "keywords": [
     "opencode",
@@ -44,9 +40,8 @@
     "loop",
     "plugin",
     "automation",
-    "iteration",
-    "continuation",
-    "task-management"
+    "task-management",
+    "continuation"
   ],
   "author": "OpenCode Community",
   "license": "MIT",
@@ -78,8 +73,8 @@
   },
   "opencode": {
     "name": "agent-loop-plugin",
-    "version": "3.1.2",
-    "description": "Task continuation and iteration loops for OpenCode plugins",
+    "version": "4.0.0",
+    "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
     "author": "OpenCode Community",
     "license": "MIT",
     "repository": "ssh://git@codeberg.org:nope-at/oc-agent-loop.git",

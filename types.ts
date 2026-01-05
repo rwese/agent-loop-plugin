@@ -1,5 +1,45 @@
 /** Shared type definitions for agent loop mechanisms */
 
+/** Model specification following OpenCode SDK format */
+export interface ModelSpec {
+  /** Provider ID (e.g., "anthropic", "openai") */
+  providerID: string
+  /** Model ID (e.g., "claude-3-5-sonnet-20241022") */
+  modelID: string
+}
+
+/** Message part for prompting */
+export interface PromptPart {
+  type: string
+  text: string
+  ignored?: boolean
+}
+
+/** Session information from OpenCode SDK */
+export interface SessionInfo {
+  id: string
+  agent?: string
+  model?: string | ModelSpec
+  title?: string
+  status?: {
+    type: "idle" | "busy"
+  }
+}
+
+/** Message information from OpenCode SDK */
+export interface MessageInfo {
+  id: string
+  sessionID: string
+  agent?: string
+  model?: string | ModelSpec
+  role: "user" | "assistant"
+  time?: {
+    created: number
+    completed?: number
+  }
+  finish?: string
+}
+
 /** Minimal plugin context interface required for agent loops */
 export interface PluginContext {
   /** Working directory for the session */
@@ -7,15 +47,27 @@ export interface PluginContext {
 
   /** Client API for interacting with OpenCode */
   client: {
-    session: {
+    /** Get current session ID */
+    readonly session: {
+      /** Get current session ID */
+      readonly id: string
+
+      /** Get session details including agent and model */
+      get(opts: { path: { id: string } }): Promise<SessionInfo>
+
+      /** List messages in a session, returns most recent first */
+      messages(opts: {
+        path: { id: string }
+      }): Promise<Array<{ info: MessageInfo; parts: unknown[] }>>
+
       /** Send a prompt to a session */
       prompt(opts: {
         path: { id: string }
         body: {
           agent?: string
-          model?: string
+          model?: string | ModelSpec
           noReply?: boolean
-          parts: Array<{ type: string; text: string; ignored?: boolean }>
+          parts: Array<PromptPart>
         }
         query?: { directory: string }
       }): Promise<void>
@@ -85,6 +137,8 @@ export interface IterationLoopState {
   prompt: string
   /** Session ID this loop belongs to (optional) */
   session_id?: string
+  /** Agent name for this loop (optional - preserves the agent used when starting) */
+  agent?: string
 }
 
 /** Result of completing an iteration loop */

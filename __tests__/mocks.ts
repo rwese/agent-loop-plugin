@@ -13,6 +13,7 @@ export function createMockPluginContext(overrides: Partial<PluginContext> = {}):
     directory: "/mock/directory",
     client: {
       session: {
+        id: "mock-session-id",
         prompt: vi.fn().mockResolvedValue(undefined),
         todo: vi.fn().mockResolvedValue({ data: [] }),
       },
@@ -31,6 +32,7 @@ export function createMockPluginContextWithTodos(todos: Todo[]): PluginContext {
   return createMockPluginContext({
     client: {
       session: {
+        id: "mock-session-id",
         prompt: vi.fn().mockResolvedValue(undefined),
         todo: vi.fn().mockResolvedValue({ data: todos }),
       },

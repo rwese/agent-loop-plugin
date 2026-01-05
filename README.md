@@ -17,9 +17,9 @@ Automatically continues sessions when incomplete todos remain. Perfect for:
 **How it works:**
 
 1. Monitors `session.idle` events
-2. Checks for incomplete todos
-3. Shows countdown toast notification
-4. Injects continuation prompt if todos remain
+2. Checks for incomplete todos via `ctx.client.session.todo()`
+3. Shows countdown toast notification via `ctx.client.tui.showToast()`
+4. Injects continuation via `ctx.client.session.prompt()` with `noReply: true`
 5. Repeats until all todos are done
 
 ### 2. Iteration Loop
@@ -38,6 +38,121 @@ Iteration-based loop that continues until the agent signals completion via tool 
 4. On `session.idle`, prompts agent to review progress
 5. Agent calls `iteration_loop_complete` tool when done
 6. Stops when tool called or max iterations reached
+
+## OpenCode SDK Integration
+
+This plugin uses the OpenCode SDK patterns for session interaction:
+
+### Client API
+
+The plugin receives a `PluginContext` with a client for interacting with OpenCode:
+
+```typescript
+interface PluginContext {
+  directory: string
+  client: {
+    session: {
+      // Current session ID
+      readonly id: string
+
+      // Send a prompt message
+      // - noReply: true → injects context without AI response (used for continuations)
+      // - noReply: false/undefined → triggers AI response
+      prompt(opts: {
+        path: { id: string }
+        body: {
+          agent?: string // Override agent (e.g., "builder", "yolo")
+          model?:
+            | string
+            | {
+                // Specify model explicitly
+                providerID: string // e.g., "anthropic"
+                modelID: string // e.g., "claude-3-5-sonnet-20241022"
+              }
+          noReply?: boolean // Inject context only, no AI response
+          parts: Array<{
+            type: string // e.g., "text"
+            text: string // Prompt content
+            ignored?: boolean // Show in UI but exclude from context
+          }>
+        }
+        query?: { directory: string }
+      }): Promise<void>
+
+      // Get todos for a session
+      todo(opts: { path: { id: string } }): Promise<Todo[] | { data: Todo[] }>
+    }
+
+    tui: {
+      // Show toast notification
+      showToast(opts: {
+        body: {
+          title: string
+          message: string
+          variant: "info" | "success" | "warning" | "error"
+          duration: number // milliseconds
+        }
+      }): Promise<void>
+    }
+  }
+}
+```
+
+### Key SDK Patterns Used
+
+1. **Context Injection with `noReply: true`**
+
+   ```typescript
+   // Inject continuation without triggering AI response
+   await client.session.prompt({
+     path: { id: sessionID },
+     body: {
+       noReply: true, // Critical: inject as context only
+       parts: [{ type: "text", text: continuationPrompt }],
+     },
+   })
+   ```
+
+2. **Explicit Model Selection**
+
+   ```typescript
+   // Override model for continuation
+   await client.session.prompt({
+     path: { id: sessionID },
+     body: {
+       model: {
+         providerID: "anthropic",
+         modelID: "claude-3-5-sonnet-20241022",
+       },
+       parts: [{ type: "text", text: prompt }],
+     },
+   })
+   ```
+
+3. **Session State Queries**
+
+   ```typescript
+   // Get current session ID
+   const sessionID = ctx.client.session.id
+
+   // Check todos
+   const response = await ctx.client.session.todo({ path: { id: sessionID } })
+   const todos = Array.isArray(response) ? response : response.data
+   ```
+
+4. **UI Notifications**
+
+   ```typescript
+   // Show toast
+   await ctx.client.tui.showToast({
+     body: {
+       title: "Task Continuation",
+       message: `${incompleteCount} tasks remaining`,
+       variant: "warning",
+       duration: 1000,
+     },
+   })
+   ```
 
 ## Installation
 
