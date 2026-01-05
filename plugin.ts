@@ -71,8 +71,8 @@ function createLogger(debug: boolean, logFilePath?: string) {
 
       // Open the log file in append mode
       logFile = fs.createWriteStream(logFilePath, { flags: "a" })
-    } catch (error) {
-      console.warn(`[agent-loop-plugin] Failed to create log file: ${error}`)
+    } catch {
+      // Ignore logging setup errors
     }
   }
 
@@ -81,23 +81,12 @@ function createLogger(debug: boolean, logFilePath?: string) {
     const dataStr = data ? ` ${JSON.stringify(data)}` : ""
     const logLine = `[${timestamp}] [${level}] [agent-loop-plugin] ${message}${dataStr}\n`
 
-    // Write to console
-    if (debug) {
-      if (level === "ERROR") {
-        console.error(logLine.trim())
-      } else if (level === "WARN") {
-        console.warn(logLine.trim())
-      } else {
-        console.log(logLine.trim())
-      }
-    }
-
-    // Write to log file
+    // Write to log file only - no console output
     if (logFile) {
       try {
         logFile.write(logLine)
-      } catch (error) {
-        console.warn(`[agent-loop-plugin] Failed to write to log file: ${error}`)
+      } catch {
+        // Ignore file write errors
       }
     }
   }

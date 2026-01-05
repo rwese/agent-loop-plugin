@@ -11,29 +11,16 @@ function createLogger(debug, logFilePath) {
         fs.mkdirSync(logDir, { recursive: true })
       }
       logFile = fs.createWriteStream(logFilePath, { flags: "a" })
-    } catch (error) {
-      console.warn(`[agent-loop-plugin] Failed to create log file: ${error}`)
-    }
+    } catch {}
   }
   function writeToLog(level, message, data) {
     const timestamp = new Date().toISOString()
     const dataStr = data ? ` ${JSON.stringify(data)}` : ""
     const logLine = `[${timestamp}] [${level}] [agent-loop-plugin] ${message}${dataStr}\n`
-    if (debug) {
-      if (level === "ERROR") {
-        console.error(logLine.trim())
-      } else if (level === "WARN") {
-        console.warn(logLine.trim())
-      } else {
-        console.log(logLine.trim())
-      }
-    }
     if (logFile) {
       try {
         logFile.write(logLine)
-      } catch (error) {
-        console.warn(`[agent-loop-plugin] Failed to write to log file: ${error}`)
-      }
+      } catch {}
     }
   }
   return {
