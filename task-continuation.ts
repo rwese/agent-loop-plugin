@@ -284,13 +284,34 @@ export function createTaskContinuation(
       // Check if session.get method exists
       if (typeof ctx.client.session.get === "function") {
         const sessionInfo = await ctx.client.session.get({ path: { id: sessionID } })
-        return {
-          agent: sessionInfo.agent,
-          model: sessionInfo.model,
+
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Fetched session info", {
+            sessionID,
+            hasAgent: !!sessionInfo.agent,
+            hasModel: !!sessionInfo.model,
+            modelType: typeof sessionInfo.model,
+          })
+        }
+
+        if (sessionInfo.agent || sessionInfo.model) {
+          return {
+            agent: sessionInfo.agent,
+            model: sessionInfo.model,
+          }
+        }
+      } else {
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("session.get method not available", { sessionID })
         }
       }
-    } catch {
-      // Ignore errors when fetching session info
+    } catch (error) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Failed to fetch session info", {
+          sessionID,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
     return null
   }
@@ -315,22 +336,44 @@ export function createTaskContinuation(
    * Get the agent/model for a session - prefer tracked over configured, then session info
    */
   async function getAgentModel(sessionID: string): Promise<{
-    agent?: string
-    model?: string | { providerID: string; modelID: string }
+    agent?: string | undefined
+    model?: string | { providerID: string; modelID: string } | undefined
   }> {
+    // First, check if we have tracked agent/model from user messages
     const tracked = sessionAgentModel.get(sessionID)
     if (tracked && (tracked.agent || tracked.model)) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Using tracked agent/model from user message", {
+          sessionID,
+          agent: tracked.agent,
+          model: tracked.model,
+        })
+      }
       return tracked
     }
 
-    // Try to get agent/model from session info
+    // Second, try to get agent/model from session info
     const sessionInfo = await fetchSessionInfo(sessionID)
     if (sessionInfo && (sessionInfo.agent || sessionInfo.model)) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Using agent/model from session info", {
+          sessionID,
+          agent: sessionInfo.agent,
+          model: sessionInfo.model,
+        })
+      }
       return sessionInfo
     }
 
-    // Fallback to configured values
-    return { agent, model }
+    // Third, fall back to configured values (may be undefined)
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("Using configured agent/model (may be undefined)", {
+        sessionID,
+        agent: agent,
+        model: model,
+      })
+    }
+    return { agent: agent ?? undefined, model: model ?? undefined }
   }
 
   async function injectContinuation(sessionID: string): Promise<void> {
