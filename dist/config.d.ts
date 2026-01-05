@@ -7,6 +7,7 @@ export interface AgentLoopPluginOptions {
   agent?: string
   model?: string
   debug?: boolean
+  logFilePath?: string
 }
 interface InternalConfig {
   taskLoop: boolean
@@ -17,6 +18,7 @@ interface InternalConfig {
   agent: string | undefined
   model: string | undefined
   debug: boolean
+  logFilePath: string | undefined
 }
 export declare function getEffectiveConfig(options?: AgentLoopPluginOptions): InternalConfig
 export declare function getConfigFilePath(): string

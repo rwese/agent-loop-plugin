@@ -38,6 +38,17 @@ interface ModelSpec {
   modelID: string
 }
 
+/** Session information from OpenCode SDK */
+interface SessionInfo {
+  id: string
+  agent?: string
+  model?: string | ModelSpec
+  title?: string
+  status?: {
+    type: "idle" | "busy"
+  }
+}
+
 /** Represents a single todo/task item */
 export interface Todo {
   id: string
@@ -96,6 +107,7 @@ interface PluginContext {
   directory: string
   client: {
     session: {
+      get(opts: { path: { id: string } }): Promise<SessionInfo>
       prompt(opts: {
         path: { id: string }
         body: {
@@ -184,6 +196,27 @@ export function createTaskContinuation(
   }
 
   /**
+   * Fetch session info to get the current agent/model
+   */
+  async function fetchSessionInfo(
+    sessionID: string
+  ): Promise<{ agent?: string; model?: string | ModelSpec } | null> {
+    try {
+      // Check if session.get method exists
+      if (typeof ctx.client.session.get === "function") {
+        const sessionInfo = await ctx.client.session.get({ path: { id: sessionID } })
+        return {
+          agent: sessionInfo.agent,
+          model: sessionInfo.model,
+        }
+      }
+    } catch {
+      // Ignore errors when fetching session info
+    }
+    return null
+  }
+
+  /**
    * Update session agent/model from user message event
    */
   function updateSessionAgentModel(
@@ -200,16 +233,23 @@ export function createTaskContinuation(
   }
 
   /**
-   * Get the agent/model for a session - prefer tracked over configured
+   * Get the agent/model for a session - prefer tracked over configured, then session info
    */
-  function getAgentModel(sessionID: string): {
+  async function getAgentModel(sessionID: string): Promise<{
     agent?: string
     model?: string | { providerID: string; modelID: string }
-  } {
+  }> {
     const tracked = sessionAgentModel.get(sessionID)
     if (tracked && (tracked.agent || tracked.model)) {
       return tracked
     }
+
+    // Try to get agent/model from session info
+    const sessionInfo = await fetchSessionInfo(sessionID)
+    if (sessionInfo && (sessionInfo.agent || sessionInfo.model)) {
+      return sessionInfo
+    }
+
     // Fallback to configured values
     return { agent, model }
   }
@@ -227,7 +267,7 @@ export function createTaskContinuation(
     if (incompleteCount === 0) return
 
     const prompt = buildContinuationPrompt(todos)
-    const { agent: continuationAgent, model: continuationModel } = getAgentModel(sessionID)
+    const { agent: continuationAgent, model: continuationModel } = await getAgentModel(sessionID)
 
     try {
       await ctx.client.session.prompt({
@@ -239,8 +279,12 @@ export function createTaskContinuation(
         },
         query: { directory: ctx.directory },
       })
-    } catch {
-      // Ignore errors when injecting continuation
+    } catch (error) {
+      // Log errors when injecting continuation for debugging
+      console.error(
+        `[task-continuation] Failed to inject continuation for session ${sessionID}:`,
+        error
+      )
     }
   }
 
@@ -251,10 +295,17 @@ export function createTaskContinuation(
       clearTimeout(existingTimeout)
     }
 
-    // Schedule new countdown
-    const timeout = setTimeout(() => {
+    // Schedule new countdown with proper async handling
+    const timeout = setTimeout(async () => {
       pendingCountdowns.delete(sessionID)
-      injectContinuation(sessionID)
+      try {
+        await injectContinuation(sessionID)
+      } catch (error) {
+        console.error(
+          `[task-continuation] Error in continuation timeout callback for session ${sessionID}:`,
+          error
+        )
+      }
     }, countdownSeconds * 1000)
 
     pendingCountdowns.set(sessionID, timeout)
@@ -290,7 +341,7 @@ export function createTaskContinuation(
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) {
       // Send completion status message
-      const { agent: completionAgent, model: completionModel } = getAgentModel(sessionID)
+      const { agent: completionAgent, model: completionModel } = await getAgentModel(sessionID)
       await ctx.client.session.prompt({
         path: { id: sessionID },
         body: {

@@ -24,6 +24,8 @@
  * ```
  */
 
+import * as fs from "node:fs"
+import * as path from "node:path"
 import type { LoopEvent, PluginContext, TaskContinuationOptions } from "./types.js"
 import { createTaskContinuation } from "./task-continuation.js"
 import { getEffectiveConfig, getConfigSourceInfo } from "./config.js"
@@ -48,31 +50,79 @@ export interface AgentLoopPluginOptions {
   model?: string
   /** Enable debug logging */
   debug?: boolean
+  /** Path to log file for writing logs */
+  logFilePath?: string
 }
 
 /**
  * Logging utility
  */
-function createLogger(debug: boolean) {
+function createLogger(debug: boolean, logFilePath?: string) {
+  let logFile: fs.WriteStream | null = null
+
+  // Initialize log file if path is provided
+  if (logFilePath) {
+    try {
+      // Ensure the directory exists
+      const logDir = path.dirname(logFilePath)
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true })
+      }
+
+      // Open the log file in append mode
+      logFile = fs.createWriteStream(logFilePath, { flags: "a" })
+    } catch (error) {
+      console.warn(`[agent-loop-plugin] Failed to create log file: ${error}`)
+    }
+  }
+
+  function writeToLog(level: string, message: string, data?: Record<string, unknown>): void {
+    const timestamp = new Date().toISOString()
+    const dataStr = data ? ` ${JSON.stringify(data)}` : ""
+    const logLine = `[${timestamp}] [${level}] [agent-loop-plugin] ${message}${dataStr}\n`
+
+    // Write to console
+    if (debug) {
+      if (level === "ERROR") {
+        console.error(logLine.trim())
+      } else if (level === "WARN") {
+        console.warn(logLine.trim())
+      } else {
+        console.log(logLine.trim())
+      }
+    }
+
+    // Write to log file
+    if (logFile) {
+      try {
+        logFile.write(logLine)
+      } catch (error) {
+        console.warn(`[agent-loop-plugin] Failed to write to log file: ${error}`)
+      }
+    }
+  }
+
   return {
     debug: (message: string, data?: Record<string, unknown>) => {
-      if (debug) {
-        console.log(`[agent-loop-plugin] DEBUG: ${message}`, data ?? "")
-      }
+      writeToLog("DEBUG", message, data)
     },
     info: (message: string, data?: Record<string, unknown>) => {
-      if (debug) {
-        console.log(`[agent-loop-plugin] INFO: ${message}`, data ?? "")
-      }
+      writeToLog("INFO", message, data)
     },
     warn: (message: string, data?: Record<string, unknown>) => {
-      if (debug) {
-        console.warn(`[agent-loop-plugin] WARN: ${message}`, data ?? "")
-      }
+      writeToLog("WARN", message, data)
     },
     error: (message: string, data?: Record<string, unknown>) => {
-      if (debug) {
-        console.error(`[agent-loop-plugin] ERROR: ${message}`, data ?? "")
+      writeToLog("ERROR", message, data)
+    },
+    cleanup: () => {
+      if (logFile) {
+        try {
+          logFile.end()
+        } catch {
+          // Ignore cleanup errors
+        }
+        logFile = null
       }
     },
   }
@@ -95,7 +145,7 @@ function extractSessionID(event: LoopEvent): string | undefined {
  */
 export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
   const config = getEffectiveConfig(options)
-  const logger = createLogger(config.debug ?? false)
+  const logger = createLogger(config.debug ?? false, config.logFilePath)
 
   return async (ctx: PluginContext) => {
     const configSource = getConfigSourceInfo()
@@ -103,6 +153,7 @@ export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
       directory: ctx.directory,
       configSource: configSource.source,
       configPath: configSource.path,
+      logFilePath: config.logFilePath,
     })
 
     // Track session state
@@ -207,6 +258,24 @@ export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
 
         // Add any custom configuration here
         // For example, adding custom tools or modifying existing ones
+      },
+
+      /**
+       * Plugin cleanup handler
+       */
+      cleanup: async () => {
+        logger.info("Cleaning up agent-loop-plugin")
+
+        // Cleanup all session states
+        for (const state of sessionState.values()) {
+          if (state.taskContinuation) {
+            await state.taskContinuation.cleanup()
+          }
+        }
+        sessionState.clear()
+
+        // Cleanup logger
+        logger.cleanup()
       },
     }
   }

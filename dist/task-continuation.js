@@ -38,6 +38,18 @@ export function createTaskContinuation(ctx, options = {}) {
       return []
     }
   }
+  async function fetchSessionInfo(sessionID) {
+    try {
+      if (typeof ctx.client.session.get === "function") {
+        const sessionInfo = await ctx.client.session.get({ path: { id: sessionID } })
+        return {
+          agent: sessionInfo.agent,
+          model: sessionInfo.model,
+        }
+      }
+    } catch {}
+    return null
+  }
   function updateSessionAgentModel(sessionID, eventAgent, eventModel) {
     if (eventAgent || eventModel) {
       sessionAgentModel.set(sessionID, {
@@ -46,10 +58,14 @@ export function createTaskContinuation(ctx, options = {}) {
       })
     }
   }
-  function getAgentModel(sessionID) {
+  async function getAgentModel(sessionID) {
     const tracked = sessionAgentModel.get(sessionID)
     if (tracked && (tracked.agent || tracked.model)) {
       return tracked
+    }
+    const sessionInfo = await fetchSessionInfo(sessionID)
+    if (sessionInfo && (sessionInfo.agent || sessionInfo.model)) {
+      return sessionInfo
     }
     return { agent, model }
   }
@@ -63,7 +79,7 @@ export function createTaskContinuation(ctx, options = {}) {
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) return
     const prompt = buildContinuationPrompt(todos)
-    const { agent: continuationAgent, model: continuationModel } = getAgentModel(sessionID)
+    const { agent: continuationAgent, model: continuationModel } = await getAgentModel(sessionID)
     try {
       await ctx.client.session.prompt({
         path: { id: sessionID },
@@ -108,7 +124,7 @@ export function createTaskContinuation(ctx, options = {}) {
     const todos = await fetchTodos(sessionID)
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) {
-      const { agent: completionAgent, model: completionModel } = getAgentModel(sessionID)
+      const { agent: completionAgent, model: completionModel } = await getAgentModel(sessionID)
       await ctx.client.session.prompt({
         path: { id: sessionID },
         body: {

@@ -38,6 +38,8 @@ export interface AgentLoopPluginOptions {
   model?: string
   /** Enable debug logging (default: true) */
   debug?: boolean
+  /** Path to log file for writing logs */
+  logFilePath?: string
 }
 
 /**
@@ -53,6 +55,7 @@ interface InternalConfig {
   agent: string | undefined
   model: string | undefined
   debug: boolean
+  logFilePath: string | undefined
 }
 
 /**
@@ -67,6 +70,7 @@ const HARDCODED_DEFAULTS: InternalConfig = {
   agent: undefined,
   model: undefined,
   debug: true,
+  logFilePath: undefined,
 }
 
 /**
@@ -116,6 +120,7 @@ function loadConfigFromFile(): AgentLoopPluginOptions | null {
       agent: config.agent,
       model: config.model,
       debug: config.debug,
+      logFilePath: config.logFilePath,
     }
   } catch (error) {
     if (error instanceof SyntaxError) {

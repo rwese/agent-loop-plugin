@@ -1,25 +1,60 @@
+import * as fs from "node:fs"
+import * as path from "node:path"
 import { createTaskContinuation } from "./task-continuation.js"
 import { getEffectiveConfig, getConfigSourceInfo } from "./config.js"
-function createLogger(debug) {
+function createLogger(debug, logFilePath) {
+  let logFile = null
+  if (logFilePath) {
+    try {
+      const logDir = path.dirname(logFilePath)
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true })
+      }
+      logFile = fs.createWriteStream(logFilePath, { flags: "a" })
+    } catch (error) {
+      console.warn(`[agent-loop-plugin] Failed to create log file: ${error}`)
+    }
+  }
+  function writeToLog(level, message, data) {
+    const timestamp = new Date().toISOString()
+    const dataStr = data ? ` ${JSON.stringify(data)}` : ""
+    const logLine = `[${timestamp}] [${level}] [agent-loop-plugin] ${message}${dataStr}\n`
+    if (debug) {
+      if (level === "ERROR") {
+        console.error(logLine.trim())
+      } else if (level === "WARN") {
+        console.warn(logLine.trim())
+      } else {
+        console.log(logLine.trim())
+      }
+    }
+    if (logFile) {
+      try {
+        logFile.write(logLine)
+      } catch (error) {
+        console.warn(`[agent-loop-plugin] Failed to write to log file: ${error}`)
+      }
+    }
+  }
   return {
     debug: (message, data) => {
-      if (debug) {
-        console.log(`[agent-loop-plugin] DEBUG: ${message}`, data ?? "")
-      }
+      writeToLog("DEBUG", message, data)
     },
     info: (message, data) => {
-      if (debug) {
-        console.log(`[agent-loop-plugin] INFO: ${message}`, data ?? "")
-      }
+      writeToLog("INFO", message, data)
     },
     warn: (message, data) => {
-      if (debug) {
-        console.warn(`[agent-loop-plugin] WARN: ${message}`, data ?? "")
-      }
+      writeToLog("WARN", message, data)
     },
     error: (message, data) => {
-      if (debug) {
-        console.error(`[agent-loop-plugin] ERROR: ${message}`, data ?? "")
+      writeToLog("ERROR", message, data)
+    },
+    cleanup: () => {
+      if (logFile) {
+        try {
+          logFile.end()
+        } catch {}
+        logFile = null
       }
     },
   }
@@ -34,13 +69,14 @@ function extractSessionID(event) {
 }
 export function createAgentLoopPlugin(options = {}) {
   const config = getEffectiveConfig(options)
-  const logger = createLogger(config.debug ?? false)
+  const logger = createLogger(config.debug ?? false, config.logFilePath)
   return async (ctx) => {
     const configSource = getConfigSourceInfo()
     logger.info("Initializing agent-loop-plugin", {
       directory: ctx.directory,
       configSource: configSource.source,
       configPath: configSource.path,
+      logFilePath: config.logFilePath,
     })
     const sessionState = new Map()
     if (config.taskLoop) {
@@ -110,6 +146,16 @@ export function createAgentLoopPlugin(options = {}) {
       },
       config: async (_opencodeConfig) => {
         logger.debug("Configuring plugin")
+      },
+      cleanup: async () => {
+        logger.info("Cleaning up agent-loop-plugin")
+        for (const state of sessionState.values()) {
+          if (state.taskContinuation) {
+            await state.taskContinuation.cleanup()
+          }
+        }
+        sessionState.clear()
+        logger.cleanup()
       },
     }
   }

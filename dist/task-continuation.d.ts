@@ -2,6 +2,15 @@ interface ModelSpec {
   providerID: string
   modelID: string
 }
+interface SessionInfo {
+  id: string
+  agent?: string
+  model?: string | ModelSpec
+  title?: string
+  status?: {
+    type: "idle" | "busy"
+  }
+}
 export interface Todo {
   id: string
   content: string
@@ -41,6 +50,11 @@ interface PluginContext {
   directory: string
   client: {
     session: {
+      get(opts: {
+        path: {
+          id: string
+        }
+      }): Promise<SessionInfo>
       prompt(opts: {
         path: {
           id: string

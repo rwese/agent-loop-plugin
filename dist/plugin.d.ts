@@ -8,16 +8,19 @@ export interface AgentLoopPluginOptions {
   agent?: string
   model?: string
   debug?: boolean
+  logFilePath?: string
 }
 export declare function createAgentLoopPlugin(options?: AgentLoopPluginOptions): (
   ctx: PluginContext
 ) => Promise<{
   event: ({ event }: { event: LoopEvent }) => Promise<void>
   config: (_opencodeConfig: Record<string, unknown>) => Promise<void>
+  cleanup: () => Promise<void>
 }>
 declare const plugin: (ctx: PluginContext) => Promise<{
   event: ({ event }: { event: LoopEvent }) => Promise<void>
   config: (_opencodeConfig: Record<string, unknown>) => Promise<void>
+  cleanup: () => Promise<void>
 }>
 export default plugin
 export type {
