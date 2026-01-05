@@ -5,17 +5,13 @@
 The OpenCode plugin that uses this library is at:
 
 ```
-~/.config/opencode/plugin/agent-loop.js
+~/.config/opencode/plugin/index.js
 ```
 
 ## Plugin Structure
 
 ```javascript
-import {
-  createTaskLoop,
-  createIterationLoop,
-  sendIgnoredMessage,
-} from "/Users/wese/Repos/OC_agent/agent-loop/dist/index.js"
+import { createTaskLoop, createIterationLoop, sendIgnoredMessage } from "agent-loop-plugin"
 
 export const AgentLoopPlugin = async ({ directory, client }) => {
   // Create plugin context
@@ -88,7 +84,7 @@ In `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugin": ["./plugin/agent-loop.js"]
+  "plugin": ["./plugin/index.js"]
 }
 ```
 

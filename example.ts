@@ -1,5 +1,5 @@
 /**
- * Example: How to use agent-loop in an OpenCode plugin
+ * Example: How to use agent-loop-plugin in an OpenCode plugin
  *
  * This demonstrates both loop mechanisms working together.
  */

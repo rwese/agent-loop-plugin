@@ -1,6 +1,6 @@
 # Agent Loop Skills
 
-Quick reference for working with the oc-agent-loop library.
+Quick reference for working with the agent-loop-plugin library.
 
 ## Available Skills
 
