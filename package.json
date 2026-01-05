@@ -89,6 +89,7 @@
     "**/*.test.ts": "npm test -- --run"
   },
   "dependencies": {
-    "@rwese/agent-loop-plugin": "rwese/agent-loop-plugin"
+    "@rwese/agent-loop-plugin": "rwese/agent-loop-plugin",
+    "agent-loop-plugin": "^3.1.7"
   }
 }

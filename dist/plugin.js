@@ -112,7 +112,7 @@ export function createAgentLoopPlugin(options = {}) {
             logger.debug("Unhandled event type", { eventType: event.type })
         }
       },
-      config: async (opencodeConfig) => {
+      config: async (_opencodeConfig) => {
         logger.debug("Configuring plugin")
       },
     }

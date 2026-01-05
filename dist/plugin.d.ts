@@ -13,11 +13,11 @@ export declare function createAgentLoopPlugin(options?: AgentLoopPluginOptions):
   ctx: PluginContext
 ) => Promise<{
   event: ({ event }: { event: LoopEvent }) => Promise<void>
-  config: (opencodeConfig: Record<string, unknown>) => Promise<void>
+  config: (_opencodeConfig: Record<string, unknown>) => Promise<void>
 }>
 declare const plugin: (ctx: PluginContext) => Promise<{
   event: ({ event }: { event: LoopEvent }) => Promise<void>
-  config: (opencodeConfig: Record<string, unknown>) => Promise<void>
+  config: (_opencodeConfig: Record<string, unknown>) => Promise<void>
 }>
 export default plugin
 export type {
