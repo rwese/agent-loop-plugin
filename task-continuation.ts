@@ -286,15 +286,19 @@ export function createTaskContinuation(
         const sessionInfo = await ctx.client.session.get({ path: { id: sessionID } })
 
         if (typeof logger !== "undefined" && logger) {
-          logger.debug("Fetched session info", {
+          logger.debug("Raw session.get response", {
             sessionID,
-            hasAgent: !!sessionInfo.agent,
-            hasModel: !!sessionInfo.model,
-            modelType: typeof sessionInfo.model,
+            response: JSON.stringify(sessionInfo),
+            keys: Object.keys(sessionInfo ?? {}),
+            hasAgent: !!sessionInfo?.agent,
+            hasModel: !!sessionInfo?.model,
+            agentValue: sessionInfo?.agent,
+            modelValue: sessionInfo?.model,
+            modelType: typeof sessionInfo?.model,
           })
         }
 
-        if (sessionInfo.agent || sessionInfo.model) {
+        if (sessionInfo && (sessionInfo.agent || sessionInfo.model)) {
           return {
             agent: sessionInfo.agent,
             model: sessionInfo.model,
@@ -302,14 +306,15 @@ export function createTaskContinuation(
         }
       } else {
         if (typeof logger !== "undefined" && logger) {
-          logger.debug("session.get method not available", { sessionID })
+          logger.debug("session.get method not available on client", { sessionID })
         }
       }
     } catch (error) {
       if (typeof logger !== "undefined" && logger) {
-        logger.debug("Failed to fetch session info", {
+        logger.debug("Exception calling session.get", {
           sessionID,
           error: error instanceof Error ? error.message : String(error),
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
         })
       }
     }
@@ -414,7 +419,9 @@ export function createTaskContinuation(
         sessionID,
         agent: continuationAgent,
         model: continuationModel,
+        modelType: typeof continuationModel,
         promptLength: prompt.length,
+        promptPreview: prompt.substring(0, 100) + "...",
       })
     }
 
