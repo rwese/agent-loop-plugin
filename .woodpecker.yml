@@ -89,7 +89,7 @@ steps:
     commands:
       - |
         echo "@nope-at:registry=https://codeberg.org/api/packages/npm" > .npmrc
-        echo "//codeberg.org/api/packages/npm/:_authToken=${CODEBERG_TOKEN}" >> .npmrc
+        echo "//codeberg.org/api/packages/npm/:_authToken=$CODEBERG_TOKEN" >> .npmrc
         cat .npmrc
         echo "Publishing to Codeberg npm registry..."
         npm publish --access public
@@ -99,22 +99,5 @@ steps:
       - test
       - lint
       - format
-    when:
-      - event: tag
-
-  # ===========================================================================
-  # Git Tag and Push (on tag events only)
-  # Creates annotated git tags for published versions
-  # ===========================================================================
-
-  git-tag:
-    image: node:22-alpine
-    commands:
-      - |
-        echo "Creating git tag for v${CI_COMMIT_TAG}..."
-        git tag -m "v${CI_COMMIT_TAG}" v${CI_COMMIT_TAG}
-        git push origin v${CI_COMMIT_TAG}
-    depends_on:
-      - publish
     when:
       - event: tag
