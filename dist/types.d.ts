@@ -139,5 +139,6 @@ export interface TaskContinuationOptions {
   agent?: string
   model?: string
   logFilePath?: string
+  continuationPromptFile?: string
 }
 //# sourceMappingURL=types.d.ts.map

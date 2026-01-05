@@ -1,5 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { loadPromptTemplate } from "./prompts.js"
 function createFileLogger(logFilePath) {
   let logFile = null
   let logBuffer = []
@@ -51,8 +52,20 @@ function createFileLogger(logFilePath) {
 const getIncompleteTodos = (todos) =>
   todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
 const getIncompleteCount = (todos) => getIncompleteTodos(todos).length
-function buildContinuationPrompt(todos) {
+function buildContinuationPrompt(todos, promptFilePath) {
   const pending = getIncompleteTodos(todos)
+  if (promptFilePath) {
+    const todoList = pending.map((t, i) => `${i + 1}. [${t.status}] ${t.content}`).join("\n")
+    const customPrompt = loadPromptTemplate(promptFilePath, {
+      incompleteCount: pending.length,
+      todoList: todoList,
+      totalCount: todos.length,
+      completedCount: todos.length - pending.length,
+    })
+    if (customPrompt) {
+      return customPrompt
+    }
+  }
   return `[SYSTEM - AUTO-CONTINUATION]
 
 You have ${pending.length} incomplete task(s). Work on them NOW without asking for permission.
@@ -76,6 +89,7 @@ export function createTaskContinuation(ctx, options = {}) {
     agent,
     model,
     logFilePath,
+    continuationPromptFile,
   } = options
   const logger = createFileLogger(logFilePath)
   const recoveringSessions = new Set()
@@ -251,7 +265,7 @@ export function createTaskContinuation(ctx, options = {}) {
       }
       return
     }
-    const prompt = buildContinuationPrompt(todos)
+    const prompt = buildContinuationPrompt(todos, continuationPromptFile)
     let agentModel = null
     let attempts = 0
     const maxAttempts = 10

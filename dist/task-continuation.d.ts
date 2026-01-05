@@ -39,6 +39,7 @@ export interface TaskContinuationOptions {
   agent?: string
   model?: string | ModelSpec
   logFilePath?: string
+  continuationPromptFile?: string
 }
 export interface TaskContinuation {
   handler: (input: { event: LoopEvent }) => Promise<void>

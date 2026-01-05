@@ -96,6 +96,7 @@ export function createAgentLoopPlugin(options = {}) {
                   agent: config.agent,
                   model: config.model,
                   logFilePath: config.logFilePath,
+                  continuationPromptFile: config.continuationPromptFile,
                 }
                 state.taskContinuation = createTaskContinuation(ctx, taskContinuationOptions)
               }

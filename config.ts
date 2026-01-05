@@ -40,6 +40,8 @@ export interface AgentLoopPluginOptions {
   debug?: boolean
   /** Path to log file for writing logs */
   logFilePath?: string
+  /** Path to custom continuation prompt template file */
+  continuationPromptFile?: string
 }
 
 /**
@@ -56,6 +58,7 @@ interface InternalConfig {
   model: string | undefined
   debug: boolean
   logFilePath: string | undefined
+  continuationPromptFile: string | undefined
 }
 
 /**
@@ -71,6 +74,7 @@ const HARDCODED_DEFAULTS: InternalConfig = {
   model: undefined,
   debug: true,
   logFilePath: undefined,
+  continuationPromptFile: undefined,
 }
 
 /**
@@ -121,6 +125,7 @@ function loadConfigFromFile(): AgentLoopPluginOptions | null {
       model: config.model,
       debug: config.debug,
       logFilePath: config.logFilePath,
+      continuationPromptFile: config.continuationPromptFile,
     }
   } catch (error) {
     if (error instanceof SyntaxError) {

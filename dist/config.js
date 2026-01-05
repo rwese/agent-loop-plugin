@@ -12,6 +12,7 @@ const HARDCODED_DEFAULTS = {
   model: undefined,
   debug: true,
   logFilePath: undefined,
+  continuationPromptFile: undefined,
 }
 function getConfigPath() {
   const homeDir = process.env.HOME || process.env.USERPROFILE || ""
@@ -44,6 +45,7 @@ function loadConfigFromFile() {
       model: config.model,
       debug: config.debug,
       logFilePath: config.logFilePath,
+      continuationPromptFile: config.continuationPromptFile,
     }
   } catch (error) {
     if (error instanceof SyntaxError) {
