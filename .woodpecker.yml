@@ -84,12 +84,12 @@ steps:
     image: node:22-alpine
     environment:
       NPM_REGISTRY_URL: https://codeberg.org/api/packages/npm
-      NPM_TOKEN:
-        from_secret: codeberg_npm_token
+      CODEBERG_TOKEN:
+        from_secret: CODEBERG_TOKEN
     commands:
       - |
         echo "@nope-at:registry=https://codeberg.org/api/packages/npm" > .npmrc
-        echo "//codeberg.org/api/packages/npm/:_authToken=${NPM_TOKEN}" >> .npmrc
+        echo "//codeberg.org/api/packages/npm/:_authToken=${CODEBERG_TOKEN}" >> .npmrc
         cat .npmrc
         echo "Publishing to Codeberg npm registry..."
         npm publish --access public

@@ -83,19 +83,19 @@ if ! command -v git &> /dev/null; then
 fi
 echo "✅ git is installed: $(git --version)"
 
-# Check if CODEBERG_NPM_TOKEN is set
-if [ -z "${CODEBERG_NPM_TOKEN:-}" ]; then
-    echo -e "${RED}❌ CODEBERG_NPM_TOKEN environment variable is not set${NC}"
+# Check if CODEBERG_TOKEN is set
+if [ -z "${CODEBERG_TOKEN:-}" ]; then
+    echo -e "${RED}❌ CODEBERG_TOKEN environment variable is not set${NC}"
     echo ""
     echo -e "${YELLOW}💡 To fix this, run:${NC}"
-    echo "  export CODEBERG_NPM_TOKEN=\"your-codeberg-npm-token\""
+    echo "  export CODEBERG_TOKEN=\"your-codeberg-token\""
     echo ""
     echo -e "${YELLOW}💡 Or create a .npmrc file with your token:${NC}"
     echo "  echo \"@nope-at:registry=https://codeberg.org/api/packages/npm\" > .npmrc"
     echo "  echo \"//codeberg.org/api/packages/npm/:_authToken=YOUR_TOKEN\" >> .npmrc"
     exit 1
 fi
-echo "✅ CODEBERG_NPM_TOKEN is set"
+echo "✅ CODEBERG_TOKEN is set"
 
 # Check git remote
 if ! git remote get-url "$REMOTE" &> /dev/null; then
@@ -152,7 +152,7 @@ echo -e "${YELLOW}⚙️  Configuring npm registry...${NC}"
 # Create .npmrc file
 cat > .npmrc << EOF
 @${SCOPE#@}:registry=${REGISTRY}
-//${REGISTRY#https://}:_authToken=${CODEBERG_NPM_TOKEN}
+//${REGISTRY#https://}:_authToken=${CODEBERG_TOKEN}
 EOF
 
 echo "✅ Created .npmrc with Codeberg registry configuration"
