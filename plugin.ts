@@ -207,7 +207,8 @@ export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
             if (config.taskLoop) {
               const state = sessionState.get(sessionID)
               if (state?.taskContinuation) {
-                // Task loop will handle message.updated events automatically
+                // Task loop handles message.updated events to capture agent/model
+                await state.taskContinuation.handler({ event })
               }
             }
             break
@@ -218,7 +219,8 @@ export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
             if (config.taskLoop) {
               const state = sessionState.get(sessionID)
               if (state?.taskContinuation) {
-                // Task loop handles session.error events automatically
+                // Task loop handles session.error events to set cooldown
+                await state.taskContinuation.handler({ event })
               }
             }
             break

@@ -107,6 +107,7 @@ export function createAgentLoopPlugin(options = {}) {
             if (config.taskLoop) {
               const state = sessionState.get(sessionID)
               if (state?.taskContinuation) {
+                await state.taskContinuation.handler({ event })
               }
             }
             break
@@ -115,6 +116,7 @@ export function createAgentLoopPlugin(options = {}) {
             if (config.taskLoop) {
               const state = sessionState.get(sessionID)
               if (state?.taskContinuation) {
+                await state.taskContinuation.handler({ event })
               }
             }
             break
