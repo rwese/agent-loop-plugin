@@ -138,5 +138,6 @@ export interface TaskContinuationOptions {
   toastDurationMs?: number
   agent?: string
   model?: string
+  logFilePath?: string
 }
 //# sourceMappingURL=types.d.ts.map

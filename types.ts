@@ -190,4 +190,6 @@ export interface TaskContinuationOptions {
   agent?: string
   /** Model name for continuation prompts */
   model?: string
+  /** Path to log file for debugging */
+  logFilePath?: string
 }

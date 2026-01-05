@@ -26,6 +26,79 @@
  * ```
  */
 
+import * as fs from "node:fs"
+import * as path from "node:path"
+
+// ===========================================================================
+// Logging utilities - file only, minimal console output
+// ===========================================================================
+
+/**
+ * Simple file logger - logs everything to file, nothing to console
+ */
+function createFileLogger(logFilePath?: string) {
+  let logFile: ReturnType<typeof setInterval> | null = null
+  let logBuffer: string[] = []
+
+  // Initialize log file if path is provided
+  if (logFilePath) {
+    try {
+      const logDir = path.dirname(logFilePath)
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true })
+      }
+
+      // Flush buffer to file every second
+      logFile = setInterval(() => {
+        if (logBuffer.length > 0) {
+          try {
+            fs.appendFileSync(logFilePath, logBuffer.join(""))
+            logBuffer = []
+          } catch {
+            // Ignore file write errors
+          }
+        }
+      }, 1000)
+    } catch {
+      // Ignore logging setup errors
+    }
+  }
+
+  function log(level: string, message: string, data?: Record<string, unknown>): void {
+    const timestamp = new Date().toISOString()
+    const dataStr = data ? ` ${JSON.stringify(data)}` : ""
+    const logLine = `[${timestamp}] [${level}] [task-continuation] ${message}${dataStr}\n`
+
+    // Always buffer to file
+    if (logFile) {
+      logBuffer.push(logLine)
+    }
+  }
+
+  return {
+    debug: (message: string, data?: Record<string, unknown>) => log("DEBUG", message, data),
+    info: (message: string, data?: Record<string, unknown>) => log("INFO", message, data),
+    warn: (message: string, data?: Record<string, unknown>) => log("WARN", message, data),
+    error: (message: string, data?: Record<string, unknown>) => log("ERROR", message, data),
+    flush: () => {
+      if (logFile && logBuffer.length > 0) {
+        try {
+          fs.appendFileSync(logFilePath!, logBuffer.join(""))
+          logBuffer = []
+        } catch {
+          // Ignore flush errors
+        }
+      }
+    },
+    cleanup: () => {
+      if (logFile) {
+        clearInterval(logFile)
+        logFile = null
+      }
+    },
+  }
+}
+
 // ===========================================================================
 // Types (minimal, inlined)
 // ===========================================================================
@@ -86,6 +159,8 @@ export interface TaskContinuationOptions {
   agent?: string
   /** Model name for continuation prompts */
   model?: string | ModelSpec
+  /** Path to log file for debugging */
+  logFilePath?: string
 }
 
 /** Public interface returned by createTaskContinuation */
@@ -174,7 +249,11 @@ export function createTaskContinuation(
     toastDurationMs = 900,
     agent,
     model,
+    logFilePath,
   } = options
+
+  // Create file logger - logs nothing to console
+  const logger = createFileLogger(logFilePath)
 
   // Track recovering sessions and error cooldowns
   const recoveringSessions = new Set<string>()
@@ -280,11 +359,10 @@ export function createTaskContinuation(
         query: { directory: ctx.directory },
       })
     } catch (error) {
-      // Log errors when injecting continuation for debugging
-      console.error(
-        `[task-continuation] Failed to inject continuation for session ${sessionID}:`,
-        error
-      )
+      // Log errors to file when injecting continuation for debugging
+      logger.error(`Failed to inject continuation for session ${sessionID}`, {
+        error: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 
@@ -301,10 +379,9 @@ export function createTaskContinuation(
       try {
         await injectContinuation(sessionID)
       } catch (error) {
-        console.error(
-          `[task-continuation] Error in continuation timeout callback for session ${sessionID}:`,
-          error
-        )
+        logger.error(`Error in continuation timeout callback for session ${sessionID}`, {
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
     }, countdownSeconds * 1000)
 
@@ -468,6 +545,10 @@ export function createTaskContinuation(
     recoveringSessions.clear()
     errorCooldowns.clear()
     sessionAgentModel.clear()
+
+    // Cleanup logger - flush any pending logs and close file
+    logger.flush()
+    logger.cleanup()
   }
 
   return {

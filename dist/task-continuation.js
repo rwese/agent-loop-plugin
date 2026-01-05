@@ -1,3 +1,53 @@
+import * as fs from "node:fs"
+import * as path from "node:path"
+function createFileLogger(logFilePath) {
+  let logFile = null
+  let logBuffer = []
+  if (logFilePath) {
+    try {
+      const logDir = path.dirname(logFilePath)
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true })
+      }
+      logFile = setInterval(() => {
+        if (logBuffer.length > 0) {
+          try {
+            fs.appendFileSync(logFilePath, logBuffer.join(""))
+            logBuffer = []
+          } catch {}
+        }
+      }, 1000)
+    } catch {}
+  }
+  function log(level, message, data) {
+    const timestamp = new Date().toISOString()
+    const dataStr = data ? ` ${JSON.stringify(data)}` : ""
+    const logLine = `[${timestamp}] [${level}] [task-continuation] ${message}${dataStr}\n`
+    if (logFile) {
+      logBuffer.push(logLine)
+    }
+  }
+  return {
+    debug: (message, data) => log("DEBUG", message, data),
+    info: (message, data) => log("INFO", message, data),
+    warn: (message, data) => log("WARN", message, data),
+    error: (message, data) => log("ERROR", message, data),
+    flush: () => {
+      if (logFile && logBuffer.length > 0) {
+        try {
+          fs.appendFileSync(logFilePath, logBuffer.join(""))
+          logBuffer = []
+        } catch {}
+      }
+    },
+    cleanup: () => {
+      if (logFile) {
+        clearInterval(logFile)
+        logFile = null
+      }
+    },
+  }
+}
 const getIncompleteTodos = (todos) =>
   todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
 const getIncompleteCount = (todos) => getIncompleteTodos(todos).length
@@ -25,7 +75,9 @@ export function createTaskContinuation(ctx, options = {}) {
     toastDurationMs = 900,
     agent,
     model,
+    logFilePath,
   } = options
+  const logger = createFileLogger(logFilePath)
   const recoveringSessions = new Set()
   const errorCooldowns = new Map()
   const pendingCountdowns = new Map()
@@ -90,16 +142,26 @@ export function createTaskContinuation(ctx, options = {}) {
         },
         query: { directory: ctx.directory },
       })
-    } catch {}
+    } catch (error) {
+      logger.error(`Failed to inject continuation for session ${sessionID}`, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
   async function scheduleContinuation(sessionID) {
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
     }
-    const timeout = setTimeout(() => {
+    const timeout = setTimeout(async () => {
       pendingCountdowns.delete(sessionID)
-      injectContinuation(sessionID)
+      try {
+        await injectContinuation(sessionID)
+      } catch (error) {
+        logger.error(`Error in continuation timeout callback for session ${sessionID}`, {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }, countdownSeconds * 1000)
     pendingCountdowns.set(sessionID, timeout)
     try {
@@ -222,6 +284,8 @@ export function createTaskContinuation(ctx, options = {}) {
     recoveringSessions.clear()
     errorCooldowns.clear()
     sessionAgentModel.clear()
+    logger.flush()
+    logger.cleanup()
   }
   return {
     handler,

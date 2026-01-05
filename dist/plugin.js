@@ -108,6 +108,7 @@ export function createAgentLoopPlugin(options = {}) {
                   toastDurationMs: config.toastDurationMs,
                   agent: config.agent,
                   model: config.model,
+                  logFilePath: config.logFilePath,
                 }
                 state.taskContinuation = createTaskContinuation(ctx, taskContinuationOptions)
               }

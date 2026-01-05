@@ -38,6 +38,7 @@ export interface TaskContinuationOptions {
   toastDurationMs?: number
   agent?: string
   model?: string | ModelSpec
+  logFilePath?: string
 }
 export interface TaskContinuation {
   handler: (input: { event: LoopEvent }) => Promise<void>
