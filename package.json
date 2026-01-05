@@ -39,12 +39,14 @@
   },
   "keywords": [
     "opencode",
+    "opencode-plugin",
     "agent",
     "loop",
     "plugin",
     "automation",
     "iteration",
-    "continuation"
+    "continuation",
+    "task-management"
   ],
   "author": "OpenCode Community",
   "license": "MIT",
@@ -64,11 +66,22 @@
   "files": [
     "dist",
     ".opencode/plugin",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/rwese/agent-loop-plugin.git"
+  },
+  "opencode": {
+    "name": "agent-loop-plugin",
+    "version": "3.0.0",
+    "description": "Task continuation and iteration loops for OpenCode plugins",
+    "author": "OpenCode Community",
+    "license": "MIT",
+    "repository": "https://github.com/rwese/agent-loop-plugin",
+    "bugs": "https://github.com/rwese/agent-loop-plugin/issues",
+    "homepage": "https://github.com/rwese/agent-loop-plugin#readme"
   },
   "lint-staged": {
     "*.{ts,js,json,md}": "prettier --write",
