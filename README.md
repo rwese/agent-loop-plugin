@@ -1,6 +1,6 @@
-# Agent Loop
+# Agent Loop Plugin
 
-Standalone agent loop mechanisms for OpenCode plugins, extracted from [oh-my-opencode](https://github.com/open-code-ai/oh-my-opencode).
+Standalone agent loop plugin mechanisms for OpenCode plugins, extracted from [oh-my-opencode](https://github.com/open-code-ai/oh-my-opencode).
 
 ## Overview
 
@@ -41,16 +41,22 @@ Iteration-based loop that continues until the agent signals completion via tool 
 
 ## Installation
 
-Copy the `agent-loop` directory into your project:
+Install via npm:
 
 ```bash
-cp -r agent-loop /path/to/your/project/
+npm install agent-loop-plugin
+```
+
+Or copy the `agent-loop-plugin` directory into your project:
+
+```bash
+cp -r agent-loop-plugin /path/to/your/project/
 ```
 
 Or install as a git submodule:
 
 ```bash
-git submodule add <repository-url> agent-loop
+git submodule add <repository-url> agent-loop-plugin
 ```
 
 ## Dependencies
@@ -67,8 +73,8 @@ No external dependencies required.
 ### Basic Setup
 
 ```typescript
-import { createTaskLoop, createIterationLoop } from "./agent-loop"
-import type { PluginContext } from "./agent-loop"
+import { createTaskLoop, createIterationLoop } from "agent-loop-plugin"
+import type { PluginContext } from "agent-loop-plugin"
 
 export default function myPlugin(ctx: PluginContext) {
   // Create loops
@@ -314,7 +320,7 @@ ctx.on("event", async (event) => {
 
 ## Plugin Tools
 
-When using the Agent Loop as an OpenCode plugin (`.opencode/plugin/agent-loop.js`), the following tools are exposed for agent use:
+When using the Agent Loop Plugin as an OpenCode plugin (`.opencode/plugin/index.js`), the following tools are exposed for agent use:
 
 ### iteration_loop_start
 
@@ -433,18 +439,24 @@ Note: Completion markers are now auto-generated as unique codenames (e.g., "SHAD
 
 ### Installation
 
+Install the package:
+
+```bash
+npm install agent-loop-plugin
+```
+
 Copy the plugin to your OpenCode plugins directory:
 
 ```bash
 mkdir -p .opencode/plugin
-cp -r dist/ .opencode/plugin/agent-loop/
+cp -r node_modules/agent-loop-plugin/.opencode/plugin/ .opencode/plugin/
 ```
 
 Or reference the local development version:
 
 ```javascript
-// .opencode/plugin/agent-loop.js
-import { AgentLoopPlugin } from "../../dist/index.js"
+// .opencode/plugin/index.js
+import { AgentLoopPlugin } from "agent-loop-plugin"
 export const main = AgentLoopPlugin
 ```
 
@@ -494,9 +506,10 @@ If you need these features, use the full [oh-my-opencode](https://github.com/ope
 
 ## Testing
 
-Run tests with:
+Install dependencies and run tests:
 
 ```bash
+npm install
 npm test
 ```
 
@@ -504,7 +517,7 @@ Or manually test with a simple plugin:
 
 ```typescript
 // test-plugin.ts
-import { createTaskLoop, createIterationLoop } from "./agent-loop"
+import { createTaskLoop, createIterationLoop } from "agent-loop-plugin"
 
 export default function testPlugin(ctx: any) {
   const taskLoop = createTaskLoop(ctx)

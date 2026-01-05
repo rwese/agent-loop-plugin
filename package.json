@@ -1,7 +1,7 @@
 {
-  "name": "oc-agent-loop",
+  "name": "agent-loop-plugin",
   "version": "2.2.0",
-  "description": "Standalone agent loop mechanisms extracted from oh-my-opencode",
+  "description": "Agent Loop Plugin - Task continuation and iteration loops for OpenCode plugins",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,9 +11,9 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
-    "./.opencode/plugin": {
-      "types": "./.opencode/plugin/agent-loop.d.ts",
-      "import": "./.opencode/plugin/agent-loop.js"
+    "./plugin": {
+      "types": "./.opencode/plugin/index.d.ts",
+      "import": "./.opencode/plugin/index.js"
     }
   },
   "engines": {
@@ -41,8 +41,9 @@
     "opencode",
     "agent",
     "loop",
+    "plugin",
     "automation",
-    "todo",
+    "iteration",
     "continuation"
   ],
   "author": "OpenCode Community",
@@ -62,12 +63,12 @@
   },
   "files": [
     "dist",
-    ".opencode",
+    ".opencode/plugin",
     "README.md"
   ],
   "repository": {
     "type": "git",
-    "url": "https://codeberg.org/nope-at/oc-agent-loop.git"
+    "url": "https://codeberg.org/nope-at/agent-loop-plugin.git"
   },
   "lint-staged": {
     "*.{ts,js,json,md}": "prettier --write",

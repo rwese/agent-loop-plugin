@@ -48,7 +48,7 @@
  * }
  * ```
  *
- * @module agent-loop
+ * @module agent-loop-plugin
  */
 
 // Export types

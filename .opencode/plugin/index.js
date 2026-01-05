@@ -1,10 +1,10 @@
 /**
  * Agent Loop Plugin v2.1.0
  *
- * Integrates the oc-agent-loop library for automatic task continuation
+ * Integrates the agent-loop-plugin library for automatic task continuation
  * and iteration-based loops.
  *
- * @see https://codeberg.org/nope-at/oc-agent-loop
+ * @see https://codeberg.org/nope-at/agent-loop-plugin
  *
  * Version: 2.1.0 (Advisor-based iteration loop completion)
  *
@@ -13,9 +13,9 @@
  * - Iteration Loop: Iteration-based loop with Advisor-based completion detection
  *
  * Usage:
- *   npm install oc-agent-loop
+ *   npm install agent-loop-plugin
  *
- *   import { AgentLoopPlugin } from "oc-agent-loop/.opencode/plugin"
+ *   import { AgentLoopPlugin } from "agent-loop-plugin/plugin"
  *
  * Configuration via environment variables:
  * - AGENT_LOOP_COUNTDOWN_SECONDS: Countdown before auto-continue (default: 5)
@@ -26,7 +26,7 @@
  * - AGENT_LOOP_HELP_AGENT: Subagent name for help/feedback (e.g., "advisor")
  */
 
-/** Version of oc-agent-loop package being used */
+/** Version of agent-loop-plugin package being used */
 const PLUGIN_VERSION = "2.1.0"
 
 import {
@@ -35,7 +35,7 @@ import {
   sendIgnoredMessage,
   parseIterationLoopTag,
   buildIterationStartPrompt,
-} from "oc-agent-loop"
+} from "agent-loop-plugin"
 import { z } from "zod"
 
 // Simple tool helper that wraps the tool definition
@@ -43,7 +43,7 @@ const tool = (input) => input
 tool.schema = z
 
 export const AgentLoopPlugin = async ({ directory, client }) => {
-  // Create plugin context matching oc-agent-loop's PluginContext interface
+  // Create plugin context matching agent-loop-plugin's PluginContext interface
   const ctx = {
     directory,
     client: {
