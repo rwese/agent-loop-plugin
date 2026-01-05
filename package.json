@@ -88,7 +88,5 @@
     "*.{ts,js,json,md}": "prettier --write",
     "**/*.test.ts": "npm test -- --run"
   },
-  "dependencies": {
-    "@rwese/agent-loop-plugin": "rwese/agent-loop-plugin"
-  }
+  "dependencies": {}
 }
