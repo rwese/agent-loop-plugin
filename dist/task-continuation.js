@@ -158,6 +158,15 @@ export function createTaskContinuation(ctx, options = {}) {
   const markRecoveryComplete = (sessionID) => {
     recoveringSessions.delete(sessionID)
   }
+  const cancel = (sessionID) => {
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+    }
+    errorCooldowns.delete(sessionID)
+    recoveringSessions.delete(sessionID)
+  }
   const cleanup = async () => {
     for (const timeout of pendingCountdowns.values()) {
       clearTimeout(timeout)
@@ -170,6 +179,7 @@ export function createTaskContinuation(ctx, options = {}) {
     handler,
     markRecovering,
     markRecoveryComplete,
+    cancel,
     cleanup,
   }
 }

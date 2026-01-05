@@ -30,7 +30,10 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
-    "prepare": "husky"
+    "prepare": "husky",
+    "version:patch": "npm version patch && git push && git push --tags",
+    "version:minor": "npm version minor && git push && git push --tags",
+    "version:major": "npm version major && git push && git push --tags"
   },
   "keywords": [
     "opencode",

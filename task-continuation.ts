@@ -71,6 +71,8 @@ export interface TaskContinuation {
   markRecovering: (sessionID: string) => void
   /** Mark recovery as complete (resumes auto-continuation) */
   markRecoveryComplete: (sessionID: string) => void
+  /** Cancel any pending continuation for a session and clear related state */
+  cancel: (sessionID: string) => void
   /** Cleanup session state */
   cleanup: () => Promise<void>
 }
@@ -323,6 +325,21 @@ export function createTaskContinuation(
     recoveringSessions.delete(sessionID)
   }
 
+  const cancel = (sessionID: string): void => {
+    // Clear any pending countdown
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+    }
+
+    // Clear error cooldown
+    errorCooldowns.delete(sessionID)
+
+    // Remove from recovering set if present
+    recoveringSessions.delete(sessionID)
+  }
+
   const cleanup = async (): Promise<void> => {
     // Clear all pending countdowns
     for (const timeout of pendingCountdowns.values()) {
@@ -337,6 +354,7 @@ export function createTaskContinuation(
     handler,
     markRecovering,
     markRecoveryComplete,
+    cancel,
     cleanup,
   }
 }
