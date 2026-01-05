@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./.opencode/plugin": {
+      "types": "./.opencode/plugin/agent-loop.d.ts",
+      "import": "./.opencode/plugin/agent-loop.js"
     }
   },
   "engines": {
@@ -58,6 +62,7 @@
   },
   "files": [
     "dist",
+    ".opencode",
     "README.md"
   ],
   "repository": {
