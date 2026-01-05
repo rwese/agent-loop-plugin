@@ -68,8 +68,7 @@
     "url": "git+https://github.com/rwese/agent-loop-plugin.git"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public"
+    "registry": "https://npm.pkg.github.com"
   },
   "opencode": {
     "name": "agent-loop-plugin",
