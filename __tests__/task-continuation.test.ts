@@ -8,6 +8,8 @@ import { createTaskContinuation } from "../task-continuation.js"
 
 interface PromptCall {
   body: {
+    agent?: string
+    model?: string
     parts: Array<{
       ignored?: boolean
       text: string
@@ -75,6 +77,21 @@ function createUserMessageEvent(sessionID: string): LoopEvent {
     properties: {
       sessionID,
       info: { id: "msg-1", sessionID, role: "user" },
+    },
+  }
+}
+
+// Create a message.updated event with agent/model
+function createUserMessageEventWithAgentModel(
+  sessionID: string,
+  agent: string,
+  model: string
+): LoopEvent {
+  return {
+    type: "message.updated",
+    properties: {
+      sessionID,
+      info: { id: "msg-1", sessionID, role: "user", agent, model },
     },
   }
 }
@@ -269,5 +286,95 @@ describe("TaskContinuation", () => {
     await taskContinuation.handler({ event: createDeletedEvent("session-123") })
 
     expect(ctx.client.session.prompt).not.toHaveBeenCalled()
+  })
+
+  it("should use tracked agent/model from user message for continuation", async () => {
+    const ctx = createMockContext()
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
+
+    const taskContinuation = createTaskContinuation(ctx, {
+      agent: "configured-agent",
+      model: "configured-model",
+    })
+
+    // Simulate a user message with a specific agent/model
+    const userMessageEvent = createUserMessageEventWithAgentModel(
+      "session-123",
+      "user-agent",
+      "user-model"
+    )
+    await taskContinuation.handler({ event: userMessageEvent })
+
+    // Now trigger a session idle event
+    await taskContinuation.handler({ event: createIdleEvent("session-123") })
+
+    // The prompt should be called after the countdown
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(ctx.client.session.prompt).toHaveBeenCalled()
+
+    // Verify that the continuation used the user message agent/model, not the configured ones
+    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
+    expect(promptCall.body.agent).toBe("user-agent")
+    expect(promptCall.body.model).toBe("user-model")
+  })
+
+  it("should fall back to configured agent/model when no user message agent/model is available", async () => {
+    const ctx = createMockContext()
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
+
+    const taskContinuation = createTaskContinuation(ctx, {
+      agent: "configured-agent",
+      model: "configured-model",
+    })
+
+    // Trigger a session idle event without a prior user message
+    await taskContinuation.handler({ event: createIdleEvent("session-123") })
+
+    // The prompt should be called after the countdown
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(ctx.client.session.prompt).toHaveBeenCalled()
+
+    // Verify that the continuation used the configured agent/model
+    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
+    expect(promptCall.body.agent).toBe("configured-agent")
+    expect(promptCall.body.model).toBe("configured-model")
+  })
+
+  it("should use tracked agent/model for completion message", async () => {
+    const ctx = createMockContext()
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    // All tasks completed
+    mockTodoFn.mockResolvedValue(createMockTodos(3, 0))
+
+    const taskContinuation = createTaskContinuation(ctx, {
+      agent: "configured-agent",
+      model: "configured-model",
+    })
+
+    // Simulate a user message with a specific agent/model
+    const userMessageEvent = createUserMessageEventWithAgentModel(
+      "session-123",
+      "user-agent",
+      "user-model"
+    )
+    await taskContinuation.handler({ event: userMessageEvent })
+
+    // Trigger a session idle event (all tasks are completed)
+    await taskContinuation.handler({ event: createIdleEvent("session-123") })
+
+    // Verify that the completion message used the user message agent/model
+    expect(ctx.client.session.prompt).toHaveBeenCalled()
+    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
+    expect(promptCall.body.agent).toBe("user-agent")
+    expect(promptCall.body.model).toBe("user-model")
+    expect(promptCall.body.parts[0].ignored).toBe(true)
   })
 })

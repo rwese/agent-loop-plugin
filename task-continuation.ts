@@ -30,6 +30,14 @@
 // Types (minimal, inlined)
 // ===========================================================================
 
+/** Model specification following OpenCode SDK format */
+interface ModelSpec {
+  /** Provider ID (e.g., "anthropic", "openai") */
+  providerID: string
+  /** Model ID (e.g., "claude-3-5-sonnet-20241022") */
+  modelID: string
+}
+
 /** Represents a single todo/task item */
 export interface Todo {
   id: string
@@ -44,7 +52,13 @@ export interface LoopEvent {
   properties?: {
     sessionID?: string
     error?: unknown
-    info?: { id?: string; sessionID?: string; role?: string }
+    info?: {
+      id?: string
+      sessionID?: string
+      role?: string
+      agent?: string
+      model?: string | ModelSpec
+    }
     [key: string]: unknown
   }
 }
@@ -60,7 +74,7 @@ export interface TaskContinuationOptions {
   /** Agent name for continuation prompts */
   agent?: string
   /** Model name for continuation prompts */
-  model?: string
+  model?: string | ModelSpec
 }
 
 /** Public interface returned by createTaskContinuation */
@@ -86,7 +100,7 @@ interface PluginContext {
         path: { id: string }
         body: {
           agent?: string
-          model?: string
+          model?: string | ModelSpec
           noReply?: boolean
           parts: Array<{ type: string; text: string; ignored?: boolean }>
         }
@@ -157,6 +171,9 @@ export function createTaskContinuation(
   // Track pending countdowns for cleanup
   const pendingCountdowns = new Map<string, ReturnType<typeof setTimeout>>()
 
+  // Track the last used agent/model for each session (from user messages)
+  const sessionAgentModel = new Map<string, { agent?: string; model?: string | ModelSpec }>()
+
   async function fetchTodos(sessionID: string): Promise<Todo[]> {
     try {
       const response = await ctx.client.session.todo({ path: { id: sessionID } })
@@ -164,6 +181,37 @@ export function createTaskContinuation(
     } catch {
       return []
     }
+  }
+
+  /**
+   * Update session agent/model from user message event
+   */
+  function updateSessionAgentModel(
+    sessionID: string,
+    eventAgent?: string,
+    eventModel?: string | { providerID: string; modelID: string }
+  ): void {
+    if (eventAgent || eventModel) {
+      sessionAgentModel.set(sessionID, {
+        agent: eventAgent,
+        model: eventModel,
+      })
+    }
+  }
+
+  /**
+   * Get the agent/model for a session - prefer tracked over configured
+   */
+  function getAgentModel(sessionID: string): {
+    agent?: string
+    model?: string | { providerID: string; modelID: string }
+  } {
+    const tracked = sessionAgentModel.get(sessionID)
+    if (tracked && (tracked.agent || tracked.model)) {
+      return tracked
+    }
+    // Fallback to configured values
+    return { agent, model }
   }
 
   async function injectContinuation(sessionID: string): Promise<void> {
@@ -179,10 +227,16 @@ export function createTaskContinuation(
     if (incompleteCount === 0) return
 
     const prompt = buildContinuationPrompt(todos)
+    const { agent: continuationAgent, model: continuationModel } = getAgentModel(sessionID)
+
     try {
       await ctx.client.session.prompt({
         path: { id: sessionID },
-        body: { agent, model, parts: [{ type: "text", text: prompt }] },
+        body: {
+          agent: continuationAgent,
+          model: continuationModel,
+          parts: [{ type: "text", text: prompt }],
+        },
         query: { directory: ctx.directory },
       })
     } catch {
@@ -236,11 +290,12 @@ export function createTaskContinuation(
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) {
       // Send completion status message
+      const { agent: completionAgent, model: completionModel } = getAgentModel(sessionID)
       await ctx.client.session.prompt({
         path: { id: sessionID },
         body: {
-          agent,
-          model,
+          agent: completionAgent,
+          model: completionModel,
           noReply: true,
           parts: [{ type: "text", text: "All tasks completed!", ignored: true }],
         },
@@ -264,7 +319,7 @@ export function createTaskContinuation(
     }
   }
 
-  const handleUserMessage = async (sessionID: string): Promise<void> => {
+  const handleUserMessage = async (sessionID: string, event?: LoopEvent): Promise<void> => {
     // Clear error cooldown on user message
     errorCooldowns.delete(sessionID)
 
@@ -274,12 +329,25 @@ export function createTaskContinuation(
       clearTimeout(existingTimeout)
       pendingCountdowns.delete(sessionID)
     }
+
+    // Capture agent/model from user message if available
+    if (event?.properties?.info) {
+      const info = event.properties.info
+      // The agent/model might be in the info object or in the event properties
+      const messageAgent = (info as { agent?: string }).agent
+      const messageModel = (info as { model?: string | ModelSpec }).model
+
+      if (messageAgent || messageModel) {
+        updateSessionAgentModel(sessionID, messageAgent, messageModel)
+      }
+    }
   }
 
   const handleSessionDeleted = async (sessionID: string): Promise<void> => {
     // Cleanup session state
     recoveringSessions.delete(sessionID)
     errorCooldowns.delete(sessionID)
+    sessionAgentModel.delete(sessionID)
 
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
@@ -309,7 +377,7 @@ export function createTaskContinuation(
         await handleSessionError(sessionID)
         break
       case "message.updated":
-        await handleUserMessage(sessionID)
+        await handleUserMessage(sessionID, event)
         break
       case "session.deleted":
         await handleSessionDeleted(sessionID)
@@ -348,6 +416,7 @@ export function createTaskContinuation(
     pendingCountdowns.clear()
     recoveringSessions.clear()
     errorCooldowns.clear()
+    sessionAgentModel.clear()
   }
 
   return {

@@ -115,70 +115,16 @@ export interface LoopEvent {
     /** Error object (for error events) */
     error?: unknown
     /** Message info (for message events) */
-    info?: { id?: string; sessionID?: string; role?: string }
+    info?: {
+      id?: string
+      sessionID?: string
+      role?: string
+      agent?: string
+      model?: string | ModelSpec
+    }
     /** Additional event properties */
     [key: string]: unknown
   }
-}
-
-/** Persisted state for the iteration loop */
-export interface IterationLoopState {
-  /** Whether the loop is currently active */
-  active: boolean
-  /** Current iteration number (1-indexed) */
-  iteration: number
-  /** Maximum iterations before auto-stopping */
-  max_iterations: number
-  /** Completion marker the AI should output */
-  completion_marker: string
-  /** When the loop was started (ISO timestamp) */
-  started_at: string
-  /** Original task prompt */
-  prompt: string
-  /** Session ID this loop belongs to (optional) */
-  session_id?: string
-  /** Agent name for this loop (optional - preserves the agent used when starting) */
-  agent?: string
-}
-
-/** Result of completing an iteration loop */
-export interface CompleteLoopResult {
-  /** Whether the loop was successfully completed */
-  success: boolean
-  /** Number of iterations completed */
-  iterations: number
-  /** Summary message */
-  message: string
-}
-
-/** Result from the Advisor evaluation */
-export interface AdvisorEvaluationResult {
-  /** Whether the task is complete */
-  isComplete: boolean
-  /** Detailed feedback about progress */
-  feedback: string
-  /** Specific issues or missing items found */
-  missingItems?: string[]
-  /** Confidence level of the evaluation (0-1) */
-  confidence?: number
-}
-
-/** Information passed to the completion evaluator callback */
-export interface CompletionEvaluatorInfo {
-  /** Session ID for this iteration */
-  sessionID: string
-  /** Current iteration number */
-  iteration: number
-  /** Maximum iterations allowed */
-  maxIterations: number
-  /** Original task prompt */
-  prompt: string
-  /** Current session transcript */
-  transcript: string
-  /** Function to complete the loop */
-  complete: (summary?: string) => CompleteLoopResult
-  /** Function to continue with feedback */
-  continueWithFeedback: (feedback: string, missingItems?: string[]) => Promise<void>
 }
 
 /** Log level for controlling output verbosity */
@@ -206,28 +152,6 @@ export interface CountdownCallbackInfo {
   totalCount: number
   /** Function to call when countdown completes to inject continuation */
   inject: () => Promise<void>
-}
-
-/** Configuration options for creating an Iteration Loop */
-export interface IterationLoopOptions {
-  /** Default maximum iterations if not specified in startLoop() or prompt tag */
-  defaultMaxIterations?: number
-  /** Custom path for the state file (relative to session directory) */
-  stateFilePath?: string
-  /** Custom logger instance */
-  logger?: Logger
-  /** Minimum log level to output */
-  logLevel?: LogLevel
-  /** Agent name to use when prompting */
-  agent?: string
-  /** Model name to use when prompting */
-  model?: string
-  /** Custom path for output log file */
-  outputFilePath?: string
-  /** Callback invoked to evaluate if task is complete (uses Advisor pattern) */
-  onEvaluator?: (info: CompletionEvaluatorInfo) => Promise<AdvisorEvaluationResult>
-  /** Optional custom function to get session transcript for Advisor */
-  getTranscript?: (sessionID: string) => Promise<string>
 }
 
 /** Configuration options for creating a Task Loop */
