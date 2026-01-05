@@ -161,7 +161,6 @@ export function createTaskContinuation(ctx, options = {}) {
         body: {
           agent: continuationAgent,
           model: continuationModel,
-          noReply: true,
           parts: [{ type: "text", text: prompt }],
         },
         query: { directory: ctx.directory },

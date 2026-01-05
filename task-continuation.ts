@@ -381,7 +381,6 @@ export function createTaskContinuation(
         body: {
           agent: continuationAgent,
           model: continuationModel,
-          noReply: true, // Critical: inject as context only, don't trigger AI response
           parts: [{ type: "text", text: prompt }],
         },
         query: { directory: ctx.directory },
