@@ -1,5 +1,5 @@
 /**
- * Agent Loop Plugin (Local Development)
+ * Agent Loop Plugin
  *
  * Integrates the oc-agent-loop library for automatic task continuation
  * and iteration-based loops.
@@ -9,6 +9,11 @@
  * Features:
  * - Task Loop: Automatically continues sessions when incomplete tasks remain
  * - Iteration Loop: Iteration-based loop with tool-based completion
+ *
+ * Usage:
+ *   npm install oc-agent-loop
+ *
+ *   import { AgentLoopPlugin } from "oc-agent-loop/.opencode/plugin"
  *
  * Configuration via environment variables:
  * - AGENT_LOOP_COUNTDOWN_SECONDS: Countdown before auto-continue (default: 5)
@@ -25,7 +30,7 @@ import {
   sendIgnoredMessage,
   parseIterationLoopTag,
   buildIterationStartPrompt,
-} from "../../dist/index.js"
+} from "oc-agent-loop"
 import { z } from "zod"
 
 // Simple tool helper that wraps the tool definition
@@ -137,33 +142,93 @@ export const AgentLoopPlugin = async ({ directory, client }) => {
     }
   }
 
-  // Create Iteration Loop - continues until completion tool is called
-  // Use onContinue callback so plugin handles the prompt injection (library direct calls may not work in plugin environment)
+  /**
+   * Advisor-based evaluator for iteration loop completion.
+   * This function is called on each session.idle to determine if the task is complete.
+   * It triggers a prompt for the advisor agent to evaluate progress.
+   */
+  async function evaluateCompletion(info) {
+    const { sessionID, iteration, maxIterations, prompt, transcript } = info
+
+    // Build the evaluation prompt for the advisor agent
+    const evaluationPrompt = `[ITERATION LOOP - ADVISOR EVALUATION]
+
+You are the **advisor agent** evaluating an iteration loop task for completion.
+
+## Task Being Evaluated
+${prompt}
+
+## Current Status
+- **Iteration:** ${iteration}/${maxIterations}
+- **Session:** ${sessionID}
+
+## Recent Work (Transcript)
+${transcript ? transcript.slice(-4000) : "(No transcript available)"}
+
+## Your Evaluation Instructions
+
+1. **Review** the transcript to understand what work has been done
+2. **Compare** against the original task requirements
+3. **Decide** if the task is COMPLETE or needs more work
+
+### If COMPLETE:
+Call the \`iteration_loop_complete\` tool with a summary of what was accomplished.
+
+### If NOT COMPLETE:
+Provide specific, actionable feedback on what still needs to be done. Be constructive and clear about:
+- What requirements are not yet met
+- What specific steps should be taken next
+- Any issues or blockers you've identified
+
+**Important:** Be thorough but fair. A task is complete when all requirements are met, not when it's perfect. Don't require unnecessary polish.`
+
+    try {
+      // Send the evaluation prompt to the advisor agent
+      await ctx.client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          agent: config.helpAgent, // Use the advisor agent
+          parts: [{ type: "text", text: evaluationPrompt }],
+        },
+        query: { directory },
+      })
+
+      // Return a "pending" result - the advisor will call iteration_loop_complete if done
+      // or the loop will continue with the advisor's feedback in the next iteration
+      return {
+        isComplete: false,
+        feedback: `Advisor agent triggered for evaluation (iteration ${iteration}/${maxIterations}). Awaiting advisor response...`,
+        confidence: 0.5,
+      }
+    } catch (error) {
+      // On error, continue the loop with generic feedback
+      return {
+        isComplete: false,
+        feedback: `Failed to trigger advisor evaluation: ${error.message}. Please continue working on the task.`,
+        confidence: 0.3,
+      }
+    }
+  }
+
+  /**
+   * Get transcript for a session.
+   * This reads the transcript file if available.
+   */
+  async function getSessionTranscript(sessionID) {
+    // The transcript path is typically passed in events, but we may not have it here
+    // For now, return empty string - the evaluator will work without it
+    // TODO: Implement proper transcript retrieval via client API if available
+    return ""
+  }
+
+  // Create Iteration Loop - continues until completion tool is called or advisor says complete
+  // Uses onEvaluator callback for Advisor-based completion detection
   const iterationLoop = createIterationLoop(ctx, {
     defaultMaxIterations: config.defaultMaxIterations,
     logLevel: config.logLevel,
-    onContinue: ({ sessionID, inject }) => {
-      cancelIteration(sessionID)
-
-      let aborted = false
-      const runContinuation = async () => {
-        // Small delay to ensure session is ready
-        await new Promise((r) => setTimeout(r, 500))
-
-        if (!aborted) {
-          lastIterationInjectionTimes.set(sessionID, Date.now())
-          await inject().catch(() => {})
-        }
-        pendingIterations.delete(sessionID)
-      }
-
-      runContinuation()
-      pendingIterations.set(sessionID, {
-        abort: () => {
-          aborted = true
-        },
-      })
-    },
+    agent: config.helpAgent,
+    onEvaluator: evaluateCompletion,
+    getTranscript: getSessionTranscript,
   })
 
   return {
