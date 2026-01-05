@@ -194,6 +194,20 @@ interface PluginContext {
         query?: { directory: string }
       }): Promise<void>
       todo(opts: { path: { id: string } }): Promise<Todo[] | { data: Todo[] }>
+      messages(opts: {
+        path: { id: string }
+      }): Promise<
+        Array<{
+          info: {
+            agent?: string
+            model?: string | ModelSpec
+            role?: string
+            sessionID?: string
+            id?: string
+          }
+          parts: unknown[]
+        }>
+      >
     }
     tui: {
       showToast(opts: {
@@ -322,6 +336,67 @@ export function createTaskContinuation(
   }
 
   /**
+   * Fetch agent/model from session messages as a fallback
+   */
+  async function fetchAgentModelFromMessages(
+    sessionID: string
+  ): Promise<{ agent?: string; model?: string | ModelSpec } | null> {
+    try {
+      if (typeof ctx.client.session.messages !== "function") {
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("session.messages not available", { sessionID })
+        }
+        return null
+      }
+
+      const messagesResponse = await ctx.client.session.messages({ path: { id: sessionID } })
+
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Fetching agent/model from session messages", {
+          sessionID,
+          messageCount: messagesResponse?.length ?? 0,
+        })
+      }
+
+      // Find the last user message with agent/model
+      if (Array.isArray(messagesResponse)) {
+        for (const msg of messagesResponse) {
+          const msgInfo = (
+            msg as { info?: { agent?: string; model?: string | ModelSpec; role?: string } }
+          ).info
+
+          if (msgInfo?.agent || msgInfo?.model) {
+            if (typeof logger !== "undefined" && logger) {
+              logger.debug("Found agent/model in messages", {
+                sessionID,
+                agent: msgInfo.agent,
+                model: msgInfo.model,
+                role: msgInfo.role,
+              })
+            }
+            return {
+              agent: msgInfo.agent,
+              model: msgInfo.model,
+            }
+          }
+        }
+      }
+
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("No agent/model in session messages", { sessionID })
+      }
+    } catch (error) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Error fetching messages for agent/model", {
+          sessionID,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return null
+  }
+
+  /**
    * Update session agent/model from user message event
    */
   function updateSessionAgentModel(
@@ -370,12 +445,26 @@ export function createTaskContinuation(
       return sessionInfo
     }
 
-    // Third, fall back to configured values (may be undefined)
+    // Third, try to get agent/model from session messages
+    const messagesInfo = await fetchAgentModelFromMessages(sessionID)
+    if (messagesInfo && (messagesInfo.agent || messagesInfo.model)) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Using agent/model from session messages", {
+          sessionID,
+          agent: messagesInfo.agent,
+          model: messagesInfo.model,
+        })
+      }
+      return messagesInfo
+    }
+
+    // Fourth, fall back to configured values (may be undefined)
     if (typeof logger !== "undefined" && logger) {
       logger.debug("Using configured agent/model (may be undefined)", {
         sessionID,
         agent: agent,
         model: model,
+        note: "Session will use its default agent/model if both are undefined",
       })
     }
     return { agent: agent ?? undefined, model: model ?? undefined }

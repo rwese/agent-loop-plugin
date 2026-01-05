@@ -128,6 +128,53 @@ export function createTaskContinuation(ctx, options = {}) {
     }
     return null
   }
+  async function fetchAgentModelFromMessages(sessionID) {
+    try {
+      if (typeof ctx.client.session.messages !== "function") {
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("session.messages not available", { sessionID })
+        }
+        return null
+      }
+      const messagesResponse = await ctx.client.session.messages({ path: { id: sessionID } })
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Fetching agent/model from session messages", {
+          sessionID,
+          messageCount: messagesResponse?.length ?? 0,
+        })
+      }
+      if (Array.isArray(messagesResponse)) {
+        for (const msg of messagesResponse) {
+          const msgInfo = msg.info
+          if (msgInfo?.agent || msgInfo?.model) {
+            if (typeof logger !== "undefined" && logger) {
+              logger.debug("Found agent/model in messages", {
+                sessionID,
+                agent: msgInfo.agent,
+                model: msgInfo.model,
+                role: msgInfo.role,
+              })
+            }
+            return {
+              agent: msgInfo.agent,
+              model: msgInfo.model,
+            }
+          }
+        }
+      }
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("No agent/model in session messages", { sessionID })
+      }
+    } catch (error) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Error fetching messages for agent/model", {
+          sessionID,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return null
+  }
   function updateSessionAgentModel(sessionID, eventAgent, eventModel) {
     if (eventAgent || eventModel) {
       sessionAgentModel.set(sessionID, {
@@ -159,11 +206,23 @@ export function createTaskContinuation(ctx, options = {}) {
       }
       return sessionInfo
     }
+    const messagesInfo = await fetchAgentModelFromMessages(sessionID)
+    if (messagesInfo && (messagesInfo.agent || messagesInfo.model)) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Using agent/model from session messages", {
+          sessionID,
+          agent: messagesInfo.agent,
+          model: messagesInfo.model,
+        })
+      }
+      return messagesInfo
+    }
     if (typeof logger !== "undefined" && logger) {
       logger.debug("Using configured agent/model (may be undefined)", {
         sessionID,
         agent: agent,
         model: model,
+        note: "Session will use its default agent/model if both are undefined",
       })
     }
     return { agent: agent ?? undefined, model: model ?? undefined }

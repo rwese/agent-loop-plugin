@@ -84,6 +84,22 @@ interface PluginContext {
             data: Todo[]
           }
       >
+      messages(opts: {
+        path: {
+          id: string
+        }
+      }): Promise<
+        Array<{
+          info: {
+            agent?: string
+            model?: string | ModelSpec
+            role?: string
+            sessionID?: string
+            id?: string
+          }
+          parts: unknown[]
+        }>
+      >
     }
     tui: {
       showToast(opts: {
