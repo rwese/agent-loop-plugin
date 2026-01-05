@@ -74,13 +74,19 @@ function createLogger(debug: boolean) {
       }
     },
     info: (message: string, data?: Record<string, unknown>) => {
-      console.log(`[agent-loop-plugin] INFO: ${message}`, data ?? "")
+      if (debug) {
+        console.log(`[agent-loop-plugin] INFO: ${message}`, data ?? "")
+      }
     },
     warn: (message: string, data?: Record<string, unknown>) => {
-      console.warn(`[agent-loop-plugin] WARN: ${message}`, data ?? "")
+      if (debug) {
+        console.warn(`[agent-loop-plugin] WARN: ${message}`, data ?? "")
+      }
     },
     error: (message: string, data?: Record<string, unknown>) => {
-      console.error(`[agent-loop-plugin] ERROR: ${message}`, data ?? "")
+      if (debug) {
+        console.error(`[agent-loop-plugin] ERROR: ${message}`, data ?? "")
+      }
     },
   }
 }

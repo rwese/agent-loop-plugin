@@ -17,13 +17,19 @@ function createLogger(debug) {
       }
     },
     info: (message, data) => {
-      console.log(`[agent-loop-plugin] INFO: ${message}`, data ?? "")
+      if (debug) {
+        console.log(`[agent-loop-plugin] INFO: ${message}`, data ?? "")
+      }
     },
     warn: (message, data) => {
-      console.warn(`[agent-loop-plugin] WARN: ${message}`, data ?? "")
+      if (debug) {
+        console.warn(`[agent-loop-plugin] WARN: ${message}`, data ?? "")
+      }
     },
     error: (message, data) => {
-      console.error(`[agent-loop-plugin] ERROR: ${message}`, data ?? "")
+      if (debug) {
+        console.error(`[agent-loop-plugin] ERROR: ${message}`, data ?? "")
+      }
     },
   }
 }
