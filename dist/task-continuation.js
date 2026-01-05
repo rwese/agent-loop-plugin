@@ -122,6 +122,9 @@ export function createTaskContinuation(ctx, options = {}) {
     return { agent, model }
   }
   async function injectContinuation(sessionID) {
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("injectContinuation called", { sessionID })
+    }
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
@@ -129,9 +132,29 @@ export function createTaskContinuation(ctx, options = {}) {
     }
     const todos = await fetchTodos(sessionID)
     const incompleteCount = getIncompleteCount(todos)
-    if (incompleteCount === 0) return
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("Checking todos for continuation", {
+        sessionID,
+        totalTodos: todos.length,
+        incompleteCount,
+      })
+    }
+    if (incompleteCount === 0) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("No incomplete tasks, skipping continuation", { sessionID })
+      }
+      return
+    }
     const prompt = buildContinuationPrompt(todos)
     const { agent: continuationAgent, model: continuationModel } = await getAgentModel(sessionID)
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("Injecting continuation prompt", {
+        sessionID,
+        agent: continuationAgent,
+        model: continuationModel,
+        promptLength: prompt.length,
+      })
+    }
     try {
       await ctx.client.session.prompt({
         path: { id: sessionID },
@@ -142,10 +165,15 @@ export function createTaskContinuation(ctx, options = {}) {
         },
         query: { directory: ctx.directory },
       })
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Continuation prompt injected successfully", { sessionID })
+      }
     } catch (error) {
-      logger.error(`Failed to inject continuation for session ${sessionID}`, {
-        error: error instanceof Error ? error.message : String(error),
-      })
+      if (typeof logger !== "undefined" && logger) {
+        logger.error(`Failed to inject continuation for session ${sessionID}`, {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
   }
   async function scheduleContinuation(sessionID) {
@@ -156,14 +184,22 @@ export function createTaskContinuation(ctx, options = {}) {
     const timeout = setTimeout(async () => {
       pendingCountdowns.delete(sessionID)
       try {
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Countdown timer fired, injecting continuation", { sessionID })
+        }
         await injectContinuation(sessionID)
       } catch (error) {
-        logger.error(`Error in continuation timeout callback for session ${sessionID}`, {
-          error: error instanceof Error ? error.message : String(error),
-        })
+        if (typeof logger !== "undefined" && logger) {
+          logger.error(`Error in continuation timeout callback for session ${sessionID}`, {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
       }
     }, countdownSeconds * 1000)
     pendingCountdowns.set(sessionID, timeout)
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("Countdown timer scheduled", { sessionID, countdownSeconds })
+    }
     try {
       await ctx.client.tui.showToast({
         body: {
@@ -185,6 +221,13 @@ export function createTaskContinuation(ctx, options = {}) {
     }
     const todos = await fetchTodos(sessionID)
     const incompleteCount = getIncompleteCount(todos)
+    if (typeof logger !== "undefined" && logger) {
+      logger.debug("Session idle - checking todos", {
+        sessionID,
+        totalTodos: todos.length,
+        incompleteCount,
+      })
+    }
     if (incompleteCount === 0) {
       const { agent: completionAgent, model: completionModel } = await getAgentModel(sessionID)
       await ctx.client.session.prompt({
