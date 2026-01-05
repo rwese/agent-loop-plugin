@@ -40,19 +40,19 @@
 import type { PluginContext, Todo, LoopEvent, TaskLoopOptions, Logger } from "./types.js"
 import { isAbortError, createLogger, sendIgnoredMessage, writeOutput } from "./utils.js"
 
-/**
- * Build the continuation prompt with actual task list.
- * Includes pending tasks so the AI knows exactly what to work on.
- *
- * @param todos - Current todo list from the session
- * @param helpAgent - Optional name of a subagent for help/feedback
- * @returns Formatted continuation prompt with task list
- */
-function buildContinuationPrompt(todos: Todo[], helpAgent?: string): string {
-  const pending = todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
-  const taskList = pending.map((t, i) => `${i + 1}. [${t.status}] ${t.content}`).join("\n")
+/** Filter todos to get only incomplete (pending/in_progress) ones */
+const getIncompleteTodos = (todos: Todo[]) =>
+  todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
 
-  const helpSection = helpAgent
+/** Format task list for continuation prompt */
+const formatTaskList = (todos: Todo[]): string =>
+  getIncompleteTodos(todos)
+    .map((t, i) => `${i + 1}. [${t.status}] ${t.content}`)
+    .join("\n")
+
+/** Build help section for continuation prompt */
+const buildHelpSection = (helpAgent?: string): string =>
+  helpAgent
     ? `
 IF YOU NEED HELP:
 - Use the Task tool with subagent_type="${helpAgent}" to ask questions or get feedback
@@ -60,13 +60,20 @@ IF YOU NEED HELP:
 - Only use this if you are truly blocked - prefer making progress independently`
     : ""
 
+/**
+ * Build the continuation prompt with actual task list.
+ * @param todos - Current todo list from the session
+ * @param helpAgent - Optional name of a subagent for help/feedback
+ */
+function buildContinuationPrompt(todos: Todo[], helpAgent?: string): string {
+  const pending = getIncompleteTodos(todos)
   return `[SYSTEM - AUTO-CONTINUATION]
 
 You have ${pending.length} incomplete task(s). Work on them NOW without asking for permission.
 
 PENDING TASKS:
 
-${taskList}
+${formatTaskList(todos)}
 
 INSTRUCTIONS:
 
@@ -74,7 +81,7 @@ INSTRUCTIONS:
 2. Use todowrite to mark it "in_progress" then "completed" when done
 3. Continue until all tasks are complete
 4. MUST work independently - you can solve everything without asking for permission.
-${helpSection}`
+${buildHelpSection(helpAgent)}`
 }
 
 /** Per-session state for managing countdowns and recovery */
@@ -200,26 +207,16 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     const state = sessions.get(sessionID)
     if (!state) return
 
-    const hadTimer = !!state.countdownTimer
-    const hadInterval = !!state.countdownInterval
+    const hadCountdown = !!(state.countdownTimer || state.countdownInterval)
 
-    if (state.countdownTimer) {
-      clearTimeout(state.countdownTimer)
-      state.countdownTimer = undefined
-    }
-    if (state.countdownInterval) {
-      clearInterval(state.countdownInterval)
-      state.countdownInterval = undefined
-    }
+    if (state.countdownTimer) clearTimeout(state.countdownTimer)
+    if (state.countdownInterval) clearInterval(state.countdownInterval)
+    state.countdownTimer = undefined
+    state.countdownInterval = undefined
     state.countdownStarting = false
 
-    if (hadTimer || hadInterval) {
-      logger.debug("[cancelCountdown] Countdown cancelled", {
-        sessionID,
-        reason: reason ?? "unknown",
-        hadTimer,
-        hadInterval,
-      })
+    if (hadCountdown) {
+      logger.debug("[cancelCountdown] Countdown cancelled", { sessionID, reason: reason ?? "unknown" })
     }
   }
 
@@ -240,10 +237,9 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   /** Exit recovery mode - re-enables auto-continuation */
   const markRecoveryComplete = (sessionID: string): void => {
     const state = sessions.get(sessionID)
-    if (state) {
-      state.isRecovering = false
-      logger.debug("[markRecoveryComplete] Session recovery complete", { sessionID })
-    }
+    if (!state) return
+    state.isRecovering = false
+    logger.debug("[markRecoveryComplete] Session recovery complete", { sessionID })
   }
 
   /** Show countdown toast notification */
@@ -266,8 +262,25 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   }
 
   /** Count todos that are not completed or cancelled */
-  function getIncompleteCount(todos: Todo[]): number {
-    return todos.filter((t) => t.status !== "completed" && t.status !== "cancelled").length
+  const getIncompleteCount = (todos: Todo[]) => getIncompleteTodos(todos).length
+
+  /** Fetch todos for a session, returns empty array on error */
+  async function fetchTodos(sessionID: string): Promise<Todo[]> {
+    try {
+      const response = await ctx.client.session.todo({ path: { id: sessionID } })
+      return Array.isArray(response) ? response : (response.data ?? [])
+    } catch (err) {
+      logger.error("Failed to fetch todos", { sessionID, error: String(err) })
+      return []
+    }
+  }
+
+  /** Check if session is in cooldown (recovering or recent error) */
+  function isInCooldown(sessionID: string): boolean {
+    const state = sessions.get(sessionID)
+    if (state?.isRecovering) return true
+    if (state?.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) return true
+    return false
   }
 
   /** Inject a continuation prompt to keep the AI working */
@@ -278,81 +291,38 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
   ): Promise<void> {
     logger.debug("[injectContinuation] Called", { sessionID, _incompleteCount, total })
 
-    const state = sessions.get(sessionID)
-
-    if (state?.isRecovering) {
-      logger.debug("[injectContinuation] Skipping: session in recovery mode", { sessionID })
+    if (isInCooldown(sessionID)) {
+      logger.debug("[injectContinuation] Skipping: session in cooldown", { sessionID })
       return
     }
 
-    if (state?.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) {
-      logger.debug("[injectContinuation] Skipping: recent error (cooldown active)", {
-        sessionID,
-        lastErrorAt: state.lastErrorAt,
-        cooldownMs: errorCooldownMs,
-        timeSinceError: Date.now() - state.lastErrorAt,
-      })
-      return
-    }
-
-    let todos: Todo[] = []
-    try {
-      const response = await ctx.client.session.todo({
-        path: { id: sessionID },
-      })
-      todos = Array.isArray(response) ? response : (response.data ?? [])
-    } catch (err) {
-      logger.error("[injectContinuation] Failed to fetch todos", {
-        sessionID,
-        error: String(err),
-      })
-      return
-    }
-
+    const todos = await fetchTodos(sessionID)
     const freshIncompleteCount = getIncompleteCount(todos)
+
     if (freshIncompleteCount === 0) {
-      logger.debug("[injectContinuation] Skipping: no incomplete todos", {
-        sessionID,
-      })
+      logger.debug("[injectContinuation] Skipping: no incomplete todos", { sessionID })
       return
     }
 
     const prompt = buildContinuationPrompt(todos, helpAgent)
+    const logData = { sessionID, incompleteCount: freshIncompleteCount, totalTasks: total }
 
     try {
-      logger.debug(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, {
-        sessionID,
-        incompleteCount: freshIncompleteCount,
-        totalTasks: total,
-      })
-      logToFile(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, {
-        sessionID,
-        incompleteCount: freshIncompleteCount,
-        totalTasks: total,
-      })
+      logger.debug(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, logData)
+      logToFile(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, logData)
 
       await ctx.client.session.prompt({
         path: { id: sessionID },
-        body: {
-          agent,
-          model,
-          parts: [{ type: "text", text: prompt }],
-        },
+        body: { agent, model, parts: [{ type: "text", text: prompt }] },
         query: { directory: ctx.directory },
       })
 
       logger.debug("Continuation prompt injected successfully", { sessionID })
       logToFile("Continuation prompt injected successfully", { sessionID })
-      // Note: Don't send status message after injection - it may interfere with AI response
     } catch (err) {
-      logger.error("Failed to inject continuation prompt", {
-        sessionID,
-        error: String(err),
-      })
-      logToFile("Failed to inject continuation prompt", {
-        sessionID,
-        error: String(err),
-      })
+      const errorData = { sessionID, error: String(err) }
+      logger.error("Failed to inject continuation prompt", errorData)
+      logToFile("Failed to inject continuation prompt", errorData)
     }
   }
 
@@ -436,114 +406,78 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     })
   }
 
+  /** Handle session error - record time for cooldown */
+  const handleSessionError = (sessionID: string, error: unknown): void => {
+    const state = getState(sessionID)
+    state.lastErrorAt = Date.now()
+    cancelCountdown(sessionID, "session-error")
+    logger.debug("[session.error] Session error detected", { sessionID, isAbort: isAbortError(error) })
+  }
+
+  /** Handle session idle - main trigger for continuation */
+  const handleSessionIdle = async (sessionID: string): Promise<void> => {
+    logger.debug("[session.idle] Session idle detected", { sessionID })
+
+    if (isInCooldown(sessionID)) {
+      logger.debug("[session.idle] Skipping: session in cooldown", { sessionID })
+      return
+    }
+
+    const todos = await fetchTodos(sessionID)
+    if (todos.length === 0) {
+      logger.debug("[session.idle] No todos found", { sessionID })
+      return
+    }
+
+    const state = getState(sessionID)
+    const incompleteCount = getIncompleteCount(todos)
+
+    if (incompleteCount === 0) {
+      if (!state.completionShown) {
+        state.completionShown = true
+        await showStatusMessage(sessionID, `✅ Task Loop: All ${todos.length} tasks completed!`)
+      }
+      return
+    }
+
+    state.completionShown = false
+    startCountdown(sessionID, incompleteCount, todos.length)
+  }
+
+  /** Handle user message - cancel countdown and clear error state */
+  const handleUserMessage = (sessionID: string): void => {
+    const state = sessions.get(sessionID)
+    if (state) {
+      state.lastErrorAt = undefined
+      if (state.countdownTimer) cancelCountdown(sessionID, "user-message")
+    }
+  }
+
   /** Main event handler - wire this into the plugin event system */
   const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
     const props = event.properties
 
-    // Handle session errors - record time for cooldown calculation
-    if (event.type === "session.error") {
-      const sessionID = props?.sessionID
-      if (!sessionID) return
+    switch (event.type) {
+      case "session.error":
+        if (props?.sessionID) handleSessionError(props.sessionID, props?.error)
+        break
 
-      const state = getState(sessionID)
-      state.lastErrorAt = Date.now()
-      cancelCountdown(sessionID, "session-error")
+      case "session.idle":
+        if (props?.sessionID) await handleSessionIdle(props.sessionID)
+        break
 
-      logger.debug("[session.error] Session error detected", {
-        sessionID,
-        isAbort: isAbortError(props?.error),
-      })
-      return
-    }
-
-    // Handle session idle - main trigger for continuation
-    if (event.type === "session.idle") {
-      const sessionID = props?.sessionID
-      if (!sessionID) return
-
-      logger.debug("[session.idle] Session idle detected", { sessionID })
-
-      const state = getState(sessionID)
-
-      if (state.isRecovering) {
-        logger.debug("[session.idle] Skipping: session in recovery mode", { sessionID })
-        return
-      }
-
-      if (state.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) {
-        logger.debug("[session.idle] Skipping: recent error (cooldown active)", { sessionID })
-        return
-      }
-
-      let todos: Todo[] = []
-      try {
-        const response = await ctx.client.session.todo({
-          path: { id: sessionID },
-        })
-        todos = Array.isArray(response) ? response : (response.data ?? [])
-      } catch (err) {
-        logger.error("[session.idle] Failed to fetch todos", {
-          sessionID,
-          error: String(err),
-        })
-        return
-      }
-
-      if (!todos || todos.length === 0) {
-        logger.debug("[session.idle] No todos found", { sessionID })
-        return
-      }
-
-      const incompleteCount = getIncompleteCount(todos)
-      if (incompleteCount === 0) {
-        // Only show completion message once per session
-        if (!state.completionShown) {
-          state.completionShown = true
-          await showStatusMessage(sessionID, `✅ Task Loop: All ${todos.length} tasks completed!`)
+      case "message.updated":
+        if (props?.info?.sessionID && props?.info?.role === "user") {
+          handleUserMessage(props.info.sessionID)
         }
-        return
-      }
+        break
 
-      // Reset completion flag when there are incomplete tasks
-      state.completionShown = false
-
-      startCountdown(sessionID, incompleteCount, todos.length)
-      return
-    }
-
-    // Cancel countdown on user message only
-    // Note: We only cancel on user messages, not assistant messages.
-    // session.idle fires after the assistant is done, so we don't want
-    // late-arriving message.updated events to cancel our countdown.
-    if (event.type === "message.updated") {
-      const info = props?.info
-      const sessionID = info?.sessionID
-      const role = info?.role
-
-      if (!sessionID) return
-
-      if (role === "user") {
-        const state = sessions.get(sessionID)
-        if (state) {
-          state.lastErrorAt = undefined
-          if (state.countdownTimer) {
-            cancelCountdown(sessionID, "user-message")
-          }
+      case "session.deleted":
+        if (props?.info?.id) {
+          cleanup(props.info.id)
+          logger.debug("[session.deleted] Session deleted: cleaned up", { sessionID: props.info.id })
         }
-      }
-      return
-    }
-
-    // Clean up on session deletion
-    if (event.type === "session.deleted") {
-      const sessionInfo = props?.info
-      if (sessionInfo?.id) {
-        cleanup(sessionInfo.id)
-        logger.debug("[session.deleted] Session deleted: cleaned up", {
-          sessionID: sessionInfo.id,
-        })
-      }
-      return
+        break
     }
   }
 

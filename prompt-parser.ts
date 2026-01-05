@@ -9,33 +9,36 @@ export interface IterationLoopTagResult {
   cleanedPrompt: string
 }
 
+// Regex patterns for parsing iteration loop tags
+const TAG_PATTERN = /<iterationLoop(?:\s+([^>]*))?>(\s*[\s\S]*?)<\/iterationLoop>/i
+const SELF_CLOSING_PATTERN = /<iterationLoop\s+([\s\S]*?)\s*\/>/i
+
+/** Extract attribute value from attributes string */
+const getAttr = (attrs: string | undefined, name: string, isNumber = false): string | number | undefined => {
+  if (!attrs) return undefined
+  const pattern = isNumber ? new RegExp(`${name}\\s*=\\s*["']?(\\d+)["']?`) : new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`)
+  const match = attrs.match(pattern)
+  return match ? (isNumber ? parseInt(match[1], 10) : match[1]) : undefined
+}
+
 /** Parse <iterationLoop> tag from user prompt */
 export function parseIterationLoopTag(prompt: string): IterationLoopTagResult {
-  // Pattern for <iterationLoop ...>content</iterationLoop>
-  // Using [\s\S]*? for non-greedy match across newlines
-  const tagPattern = /<iterationLoop(?:\s+([^>]*))?>(\s*[\s\S]*?)<\/iterationLoop>/i
-
-  // Pattern for self-closing <iterationLoop ... />
-  const selfClosingPattern = /<iterationLoop\s+([\s\S]*?)\s*\/>/i
-
-  let match = prompt.match(tagPattern)
+  // Try full tag first, then self-closing
+  let match = prompt.match(TAG_PATTERN)
   let task: string | undefined
   let attributes: string | undefined
   let matchedPattern: RegExp | null = null
 
   if (match) {
-    matchedPattern = tagPattern
+    matchedPattern = TAG_PATTERN
     attributes = match[1]?.trim()
     task = match[2]?.trim()
   } else {
-    // Try self-closing syntax
-    match = prompt.match(selfClosingPattern)
+    match = prompt.match(SELF_CLOSING_PATTERN)
     if (match) {
-      matchedPattern = selfClosingPattern
+      matchedPattern = SELF_CLOSING_PATTERN
       attributes = match[1]?.trim()
-      // For self-closing, task must be in attributes
-      const taskMatch = attributes?.match(/task\s*=\s*["']([^"']+)["']/)
-      task = taskMatch?.[1]
+      task = getAttr(attributes, "task") as string | undefined
     }
   }
 
@@ -43,22 +46,12 @@ export function parseIterationLoopTag(prompt: string): IterationLoopTagResult {
     return { found: false, cleanedPrompt: prompt }
   }
 
-  // Parse attributes
-  const maxMatch = attributes?.match(/max\s*=\s*["']?(\d+)["']?/)
-  const markerMatch = attributes?.match(/marker\s*=\s*["']([^"']+)["']/)
-
-  // Remove the tag from the prompt
-  const cleanedPrompt = prompt
-    .replace(matchedPattern, "")
-    .replace(/\n{3,}/g, "\n\n") // Collapse multiple newlines
-    .trim()
-
   return {
     found: true,
     task,
-    maxIterations: maxMatch ? parseInt(maxMatch[1], 10) : undefined,
-    marker: markerMatch?.[1],
-    cleanedPrompt,
+    maxIterations: getAttr(attributes, "max", true) as number | undefined,
+    marker: getAttr(attributes, "marker") as string | undefined,
+    cleanedPrompt: prompt.replace(matchedPattern, "").replace(/\n{3,}/g, "\n\n").trim(),
   }
 }
 

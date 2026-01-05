@@ -90,42 +90,72 @@ export function parseFrontmatter<T = Record<string, unknown>>(
 export function isAbortError(error: unknown): boolean {
   if (!error) return false
 
-  if (typeof error === "object") {
-    const errObj = error as Record<string, unknown>
-    const name = errObj.name as string | undefined
-    const message = (errObj.message as string | undefined)?.toLowerCase() ?? ""
-
-    if (name === "MessageAbortedError" || name === "AbortError") {
-      // Only return true if message is not empty or has abort-related content
-      if (
-        message &&
-        (message.includes("abort") || message.includes("cancel") || message.includes("interrupt"))
-      ) {
-        return true
-      }
-      // For AbortError with empty message, still consider it an abort error
-      if (name === "AbortError") return true
-      return false
-    }
-    if (name === "DOMException" && message.includes("abort")) return true
-    if (
-      message.includes("aborted") ||
-      message.includes("cancelled") ||
-      message.includes("interrupted")
-    )
-      return true
-  }
+  const isAbortMessage = (msg: string) =>
+    msg.includes("abort") || msg.includes("cancel") || msg.includes("interrupt")
 
   if (typeof error === "string") {
-    const lower = error.toLowerCase()
-    return lower.includes("abort") || lower.includes("cancel") || lower.includes("interrupt")
+    return isAbortMessage(error.toLowerCase())
+  }
+
+  if (typeof error === "object") {
+    const { name, message } = error as { name?: string; message?: string }
+    const lowerMessage = message?.toLowerCase() ?? ""
+
+    // AbortError name is always an abort error
+    if (name === "AbortError") return true
+
+    // MessageAbortedError requires abort-related message content
+    if (name === "MessageAbortedError" && lowerMessage && isAbortMessage(lowerMessage)) return true
+
+    // DOMException with abort in message
+    if (name === "DOMException" && lowerMessage.includes("abort")) return true
+
+    // Check message for abort-related keywords (aborted, cancelled, interrupted)
+    if (
+      lowerMessage.includes("aborted") ||
+      lowerMessage.includes("cancelled") ||
+      lowerMessage.includes("interrupted")
+    )
+      return true
   }
 
   return false
 }
 
-/** Default path for iteration loop state file */
+/** Default paths */
 const DEFAULT_STATE_FILE = ".agent-loop/iteration-state.md"
+const DEFAULT_OUTPUT_FILE = ".agent-loop/output.log"
+
+/**
+ * Get a file path within the session directory
+ * @param directory - The session directory
+ * @param customPath - Optional custom path (relative to directory)
+ * @param defaultPath - Default path to use if customPath not provided
+ */
+function getFilePath(directory: string, customPath: string | undefined, defaultPath: string): string {
+  return join(directory, customPath ?? defaultPath)
+}
+
+/**
+ * Safely delete a file if it exists
+ * @returns true if deletion succeeded or file didn't exist, false on error
+ */
+function safeUnlink(filePath: string): boolean {
+  try {
+    if (existsSync(filePath)) unlinkSync(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Ensure directory exists for a file path
+ */
+function ensureDir(filePath: string): void {
+  const dir = dirname(filePath)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+}
 
 /**
  * Word lists for generating mission codenames (inspired by intelligence agency naming conventions)
@@ -226,9 +256,11 @@ export function generateCodename(): string {
  * @returns Full path to the state file
  */
 export function getStateFilePath(directory: string, customPath?: string): string {
-  const defaultPath = DEFAULT_STATE_FILE
-  return customPath ? join(directory, customPath) : join(directory, defaultPath)
+  return getFilePath(directory, customPath, DEFAULT_STATE_FILE)
 }
+
+/** Strip surrounding quotes from a string value */
+const stripQuotes = (val: unknown): string => String(val ?? "").replace(/^["']|["']$/g, "")
 
 /**
  * Read Iteration Loop state from the persisted file
@@ -240,35 +272,20 @@ export function getStateFilePath(directory: string, customPath?: string): string
 export function readLoopState(directory: string, customPath?: string): IterationLoopState | null {
   const filePath = getStateFilePath(directory, customPath)
 
-  if (!existsSync(filePath)) {
-    return null
-  }
+  if (!existsSync(filePath)) return null
 
   try {
     const content = readFileSync(filePath, "utf-8")
     const { data, body } = parseFrontmatter<Record<string, unknown>>(content)
 
-    const active = data.active
-    const iteration = data.iteration
+    if (data.active === undefined || data.iteration === undefined) return null
 
-    if (active === undefined || iteration === undefined) {
-      return null
-    }
-
-    const isActive = active === true || active === "true"
-    const iterationNum = typeof iteration === "number" ? iteration : parseInt(String(iteration), 10)
-
-    if (isNaN(iterationNum)) {
-      return null
-    }
-
-    const stripQuotes = (val: unknown): string => {
-      const str = String(val ?? "")
-      return str.replace(/^["']|["']$/g, "")
-    }
+    const iterationNum =
+      typeof data.iteration === "number" ? data.iteration : parseInt(String(data.iteration), 10)
+    if (isNaN(iterationNum)) return null
 
     return {
-      active: isActive,
+      active: data.active === true || data.active === "true",
       iteration: iterationNum,
       max_iterations: Number(data.max_iterations) || 100,
       completion_marker: stripQuotes(data.completion_marker) || "DONE",
@@ -297,11 +314,7 @@ export function writeLoopState(
   const filePath = getStateFilePath(directory, customPath)
 
   try {
-    const dir = dirname(filePath)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-
+    ensureDir(filePath)
     const sessionIdLine = state.session_id ? `session_id: "${state.session_id}"\n` : ""
     const content = `---
 active: ${state.active}
@@ -312,7 +325,6 @@ started_at: "${state.started_at}"
 ${sessionIdLine}---
 ${state.prompt}
 `
-
     writeFileSync(filePath, content, "utf-8")
     return true
   } catch {
@@ -328,16 +340,7 @@ ${state.prompt}
  * @returns true if deletion succeeded or file didn't exist, false on error
  */
 export function clearLoopState(directory: string, customPath?: string): boolean {
-  const filePath = getStateFilePath(directory, customPath)
-
-  try {
-    if (existsSync(filePath)) {
-      unlinkSync(filePath)
-    }
-    return true
-  } catch {
-    return false
-  }
+  return safeUnlink(getStateFilePath(directory, customPath))
 }
 
 /**
@@ -379,6 +382,26 @@ function formatLogMessage(level: string, message: string, data?: Record<string, 
   return `[${timestamp}] [${level.toUpperCase()}] ${message}${dataStr}`
 }
 
+/** Check if a level should be logged based on minimum level */
+const shouldLog = (level: LogLevel, minLevel: LogLevel): boolean =>
+  LOG_LEVELS[level] <= LOG_LEVELS[minLevel]
+
+/** Create a logger from a log handler function */
+function buildLogger(
+  handler: (level: LogMethod, message: string, data?: Record<string, unknown>) => void,
+  logLevel: LogLevel
+): Logger {
+  const createMethod = (level: LogMethod) => (message: string, data?: Record<string, unknown>) => {
+    if (shouldLog(level, logLevel)) handler(level, message, data)
+  }
+  return {
+    debug: createMethod("debug"),
+    info: createMethod("info"),
+    warn: createMethod("warn"),
+    error: createMethod("error"),
+  }
+}
+
 /**
  * Create a logger with level filtering and formatting
  *
@@ -387,24 +410,10 @@ function formatLogMessage(level: string, message: string, data?: Record<string, 
  * @returns Configured logger with debug, info, warn, error methods
  */
 export function createLogger(customLogger?: Partial<Logger>, logLevel: LogLevel = "info"): Logger {
-  const currentLevel = LOG_LEVELS[logLevel]
-  const shouldLog = (level: LogLevel) => LOG_LEVELS[level] <= currentLevel
-
-  const logMethod =
-    (level: LogMethod) =>
-    (message: string, data?: Record<string, unknown>): void => {
-      if (!shouldLog(level)) return
-      const formatted = formatLogMessage(level, message, data)
-      const method = customLogger?.[level] ?? console[level]
-      method(formatted, data)
-    }
-
-  return {
-    debug: logMethod("debug"),
-    info: logMethod("info"),
-    warn: logMethod("warn"),
-    error: logMethod("error"),
-  }
+  return buildLogger((level, message, data) => {
+    const formatted = formatLogMessage(level, message, data)
+    ;(customLogger?.[level] ?? console[level])(formatted, data)
+  }, logLevel)
 }
 
 /** Options for sending ignored messages */
@@ -473,9 +482,6 @@ export async function sendIgnoredMessage(
   }
 }
 
-/** Default path for output log file */
-const DEFAULT_OUTPUT_FILE = ".agent-loop/output.log"
-
 /**
  * Get output file path for loop logging
  *
@@ -484,8 +490,7 @@ const DEFAULT_OUTPUT_FILE = ".agent-loop/output.log"
  * @returns Full path to the output log file
  */
 export function getOutputFilePath(directory: string, customPath?: string): string {
-  const defaultPath = DEFAULT_OUTPUT_FILE
-  return customPath ? join(directory, customPath) : join(directory, defaultPath)
+  return getFilePath(directory, customPath, DEFAULT_OUTPUT_FILE)
 }
 
 /**
@@ -506,16 +511,10 @@ export function writeOutput(
   const filePath = getOutputFilePath(directory, customPath)
 
   try {
-    const dir = dirname(filePath)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-
+    ensureDir(filePath)
     const timestamp = new Date().toISOString()
     const dataStr = data ? ` ${JSON.stringify(data)}` : ""
-    const line = `[${timestamp}] ${message}${dataStr}\n`
-
-    appendFileSync(filePath, line, "utf-8")
+    appendFileSync(filePath, `[${timestamp}] ${message}${dataStr}\n`, "utf-8")
     return true
   } catch {
     return false
@@ -530,16 +529,7 @@ export function writeOutput(
  * @returns true if deletion succeeded or file didn't exist, false on error
  */
 export function clearOutput(directory: string, customPath?: string): boolean {
-  const filePath = getOutputFilePath(directory, customPath)
-
-  try {
-    if (existsSync(filePath)) {
-      unlinkSync(filePath)
-    }
-    return true
-  } catch {
-    return false
-  }
+  return safeUnlink(getOutputFilePath(directory, customPath))
 }
 
 /**
@@ -555,20 +545,7 @@ export function createFileLogger(
   customPath?: string,
   logLevel: LogLevel = "info"
 ): Logger {
-  const currentLevel = LOG_LEVELS[logLevel]
-  const shouldLog = (level: LogLevel) => LOG_LEVELS[level] <= currentLevel
-
-  const logMethod =
-    (level: LogMethod) =>
-    (message: string, data?: Record<string, unknown>): void => {
-      if (!shouldLog(level)) return
-      writeOutput(directory, `[${level.toUpperCase()}] ${message}`, data, customPath)
-    }
-
-  return {
-    debug: logMethod("debug"),
-    info: logMethod("info"),
-    warn: logMethod("warn"),
-    error: logMethod("error"),
-  }
+  return buildLogger((level, message, data) => {
+    writeOutput(directory, `[${level.toUpperCase()}] ${message}`, data, customPath)
+  }, logLevel)
 }

@@ -1,34 +1,5 @@
 /** Shared type definitions for agent loop mechanisms */
 
-/** A single part of a message (e.g., text, image, etc.) */
-export interface MessagePart {
-  /** Unique identifier for the message part */
-  id: string
-  /** Type of message part (e.g., "text", "image") */
-  type: string
-  /** Text content if type is "text" */
-  text?: string
-  /** Additional properties */
-  [key: string]: unknown
-}
-
-/** A message in the conversation history */
-export interface Message {
-  /** Message metadata */
-  info: {
-    /** Unique message identifier */
-    id: string
-    /** Session this message belongs to */
-    sessionID: string
-    /** Role of the message sender (user or assistant) */
-    role: "user" | "assistant"
-    /** Additional metadata */
-    [key: string]: unknown
-  }
-  /** Content parts of the message */
-  parts: MessagePart[]
-}
-
 /** Minimal plugin context interface required for agent loops */
 export interface PluginContext {
   /** Working directory for the session */
@@ -51,12 +22,6 @@ export interface PluginContext {
 
       /** Get todos for a session */
       todo(opts: { path: { id: string } }): Promise<Todo[] | { data: Todo[] }>
-
-      /** Get messages for a session (used for completion marker detection) */
-      message?(opts: {
-        path: { id: string }
-        query?: { limit?: number }
-      }): Promise<Message[] | { data: Message[] }>
     }
 
     tui: {
@@ -189,22 +154,6 @@ export interface CountdownCallbackInfo {
   inject: () => Promise<void>
 }
 
-/** Information passed to the onContinue callback when iteration continues */
-export interface IterationContinueCallbackInfo {
-  /** Session ID for this iteration */
-  sessionID: string
-  /** Current iteration number */
-  iteration: number
-  /** Maximum iterations allowed */
-  maxIterations: number
-  /** Completion marker to look for */
-  marker: string
-  /** Original task prompt */
-  prompt: string
-  /** Function to inject continuation prompt directly */
-  inject: () => Promise<void>
-}
-
 /** Configuration options for creating an Iteration Loop */
 export interface IterationLoopOptions {
   /** Default maximum iterations if not specified in startLoop() or prompt tag */
@@ -221,8 +170,6 @@ export interface IterationLoopOptions {
   model?: string
   /** Custom path for output log file */
   outputFilePath?: string
-  /** Callback invoked when iteration continues (allows plugin-controlled injection) */
-  onContinue?: (info: IterationContinueCallbackInfo) => void
   /** Callback invoked to evaluate if task is complete (uses Advisor pattern) */
   onEvaluator?: (info: CompletionEvaluatorInfo) => Promise<AdvisorEvaluationResult>
   /** Optional custom function to get session transcript for Advisor */

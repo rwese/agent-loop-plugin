@@ -58,7 +58,6 @@ export type {
   LoopEvent,
   IterationLoopState,
   IterationLoopOptions,
-  IterationContinueCallbackInfo,
   TaskLoopOptions,
   CountdownCallbackInfo,
   Logger,
