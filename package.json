@@ -71,17 +71,17 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/rwese/agent-loop-plugin.git"
+    "url": "ssh://git@codeberg.org/nope-at/oc-agent-loop.git"
   },
   "opencode": {
     "name": "agent-loop-plugin",
-    "version": "3.1.0",
+    "version": "3.1.2",
     "description": "Task continuation and iteration loops for OpenCode plugins",
     "author": "OpenCode Community",
     "license": "MIT",
-    "repository": "https://github.com/rwese/agent-loop-plugin",
-    "bugs": "https://github.com/rwese/agent-loop-plugin/issues",
-    "homepage": "https://github.com/rwese/agent-loop-plugin#readme"
+    "repository": "ssh://git@codeberg.org:nope-at/oc-agent-loop.git",
+    "bugs": "https://codeberg.org/nope-at/oc-agent-loop/issues",
+    "homepage": "https://codeberg.org/nope-at/oc-agent-loop"
   },
   "lint-staged": {
     "*.{ts,js,json,md}": "prettier --write",
