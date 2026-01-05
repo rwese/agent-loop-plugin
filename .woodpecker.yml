@@ -89,17 +89,16 @@ steps:
   publish:
     image: node:22-alpine
     environment:
-      NPM_REGISTRY_URL: https://codeberg.org/api/packages/npm
       CODEBERG_TOKEN:
         from_secret: CODEBERG_TOKEN
     commands:
       - apk add --no-cache git
       - |
-        echo "@nope-at:registry=https://codeberg.org/api/packages/npm" > .npmrc
-        echo "//codeberg.org/api/packages/npm/:_authToken=$CODEBERG_TOKEN" >> .npmrc
+        echo "@nope-at:registry=https://codeberg.org/api/packages/nope-at/npm/" > .npmrc
+        echo "//codeberg.org/api/packages/nope-at/npm/:_authToken=$CODEBERG_TOKEN" >> .npmrc
         cat .npmrc
         echo "Publishing to Codeberg npm registry..."
-        npm publish --access public
+        npm publish --scope=@nope-at --access public
     depends_on:
       - typecheck
       - build
