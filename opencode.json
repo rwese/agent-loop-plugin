@@ -1,21 +1,4 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "agents": {
-    "task-loop": {
-      "name": "task-loop",
-      "description": "Automatically continues sessions when incomplete tasks remain",
-      "model": {
-        "provider": "default",
-        "model": "default"
-      },
-      "capabilities": ["bash", "edit", "todowrite", "todoread"]
-    }
-  },
-  "commands": {
-    "continue": {
-      "description": "Continue session with incomplete tasks",
-      "agent": "task-loop",
-      "model": "default"
-    }
-  }
+  "plugin": ["ssh://git@codeberg.org/nope-at/oc-agent-loop.git"]
 }
