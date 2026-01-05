@@ -14,9 +14,15 @@ const TAG_PATTERN = /<iterationLoop(?:\s+([^>]*))?>(\s*[\s\S]*?)<\/iterationLoop
 const SELF_CLOSING_PATTERN = /<iterationLoop\s+([\s\S]*?)\s*\/>/i
 
 /** Extract attribute value from attributes string */
-const getAttr = (attrs: string | undefined, name: string, isNumber = false): string | number | undefined => {
+const getAttr = (
+  attrs: string | undefined,
+  name: string,
+  isNumber = false
+): string | number | undefined => {
   if (!attrs) return undefined
-  const pattern = isNumber ? new RegExp(`${name}\\s*=\\s*["']?(\\d+)["']?`) : new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`)
+  const pattern = isNumber
+    ? new RegExp(`${name}\\s*=\\s*["']?(\\d+)["']?`)
+    : new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`)
   const match = attrs.match(pattern)
   return match ? (isNumber ? parseInt(match[1], 10) : match[1]) : undefined
 }
@@ -51,7 +57,10 @@ export function parseIterationLoopTag(prompt: string): IterationLoopTagResult {
     task,
     maxIterations: getAttr(attributes, "max", true) as number | undefined,
     marker: getAttr(attributes, "marker") as string | undefined,
-    cleanedPrompt: prompt.replace(matchedPattern, "").replace(/\n{3,}/g, "\n\n").trim(),
+    cleanedPrompt: prompt
+      .replace(matchedPattern, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
   }
 }
 

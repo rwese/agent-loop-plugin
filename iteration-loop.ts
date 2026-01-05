@@ -102,7 +102,8 @@ export function createIterationLoop(
     title: string,
     message: string,
     variant: "info" | "success" | "warning" | "error"
-  ) => ctx.client.tui.showToast({ body: { title, message, variant, duration: 5000 } }).catch(() => {})
+  ) =>
+    ctx.client.tui.showToast({ body: { title, message, variant, duration: 5000 } }).catch(() => {})
 
   const sendStatus = (sessionID: string, message: string) =>
     sendIgnoredMessage(ctx.client, sessionID, message, logger, { agent, model })
@@ -170,7 +171,11 @@ export function createIterationLoop(
 
     const iterations = currentIteration
     resetState()
-    showToast("Iteration Loop Cancelled", `Loop cancelled at iteration ${iterations}/${maxIterations}`, "warning")
+    showToast(
+      "Iteration Loop Cancelled",
+      `Loop cancelled at iteration ${iterations}/${maxIterations}`,
+      "warning"
+    )
     return true
   }
 
@@ -185,7 +190,11 @@ export function createIterationLoop(
     const iterations = currentIteration
     resetState()
     const summaryText = summary ? ` - ${summary}` : ""
-    return { success: true, iterations, message: `Loop completed successfully after ${iterations} iteration(s)${summaryText}` }
+    return {
+      success: true,
+      iterations,
+      message: `Loop completed successfully after ${iterations} iteration(s)${summaryText}`,
+    }
   }
 
   const getState = (): IterationLoopState | null => {
@@ -205,12 +214,7 @@ export function createIterationLoop(
     const state = getState()
     const marker = state?.completion_marker ?? "UNKNOWN"
 
-    const modifiedPrompt = buildIterationStartPrompt(
-      parsed.task,
-      max,
-      marker,
-      parsed.cleanedPrompt
-    )
+    const modifiedPrompt = buildIterationStartPrompt(parsed.task, max, marker, parsed.cleanedPrompt)
 
     return { shouldIntercept: true, modifiedPrompt }
   }
@@ -253,24 +257,52 @@ export function createIterationLoop(
 
       if (evaluation.isComplete) {
         const result = completeLoop(sessionID, evaluation.feedback)
-        await showToast("Iteration Loop Complete!", `Task completed after ${result.iterations} iteration(s): ${evaluation.feedback}`, "success")
-        await sendStatus(sessionID, `🎉 Iteration Loop: Complete! Finished in ${result.iterations} iteration(s). Advisor: ${evaluation.feedback}`)
+        await showToast(
+          "Iteration Loop Complete!",
+          `Task completed after ${result.iterations} iteration(s): ${evaluation.feedback}`,
+          "success"
+        )
+        await sendStatus(
+          sessionID,
+          `🎉 Iteration Loop: Complete! Finished in ${result.iterations} iteration(s). Advisor: ${evaluation.feedback}`
+        )
       } else if (currentIteration >= maxIterations) {
         resetState()
-        await showToast("Iteration Loop Stopped", `Max iterations (${maxIterations}) reached without completion`, "warning")
-        await sendStatus(sessionID, `⚠️ Iteration Loop: Stopped - Max iterations (${maxIterations}) reached`)
+        await showToast(
+          "Iteration Loop Stopped",
+          `Max iterations (${maxIterations}) reached without completion`,
+          "warning"
+        )
+        await sendStatus(
+          sessionID,
+          `⚠️ Iteration Loop: Stopped - Max iterations (${maxIterations}) reached`
+        )
       } else {
         incrementIteration(ctx.directory, stateFilePath)
         currentIteration++
-        const truncatedFeedback = evaluation.feedback.length > 100 ? `${evaluation.feedback.substring(0, 100)}...` : evaluation.feedback
-        await showToast("Iteration Loop", `Iteration ${currentIteration}/${maxIterations} - Advisor feedback provided`, "info")
-        await sendStatus(sessionID, `🔄 Iteration Loop: Iteration ${currentIteration}/${maxIterations} - Advisor feedback: ${truncatedFeedback}`)
+        const truncatedFeedback =
+          evaluation.feedback.length > 100
+            ? `${evaluation.feedback.substring(0, 100)}...`
+            : evaluation.feedback
+        await showToast(
+          "Iteration Loop",
+          `Iteration ${currentIteration}/${maxIterations} - Advisor feedback provided`,
+          "info"
+        )
+        await sendStatus(
+          sessionID,
+          `🔄 Iteration Loop: Iteration ${currentIteration}/${maxIterations} - Advisor feedback: ${truncatedFeedback}`
+        )
         await sendContinuationPrompt(sessionID, evaluation.feedback)
       }
     } catch (evalError) {
       logger.error("Advisor evaluation failed", { sessionID, error: String(evalError) })
       resetState()
-      await showToast("Iteration Loop Error", `Error during evaluation: ${String(evalError)}`, "error")
+      await showToast(
+        "Iteration Loop Error",
+        `Error during evaluation: ${String(evalError)}`,
+        "error"
+      )
     }
   }
 

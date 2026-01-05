@@ -132,7 +132,11 @@ const DEFAULT_OUTPUT_FILE = ".agent-loop/output.log"
  * @param customPath - Optional custom path (relative to directory)
  * @param defaultPath - Default path to use if customPath not provided
  */
-function getFilePath(directory: string, customPath: string | undefined, defaultPath: string): string {
+function getFilePath(
+  directory: string,
+  customPath: string | undefined,
+  defaultPath: string
+): string {
   return join(directory, customPath ?? defaultPath)
 }
 

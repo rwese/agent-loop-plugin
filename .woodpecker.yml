@@ -1,0 +1,120 @@
+steps:
+  # ===========================================================================
+  # Install Dependencies
+  # ===========================================================================
+
+  install:
+    image: node:22-alpine
+    commands:
+      - npm ci
+    when:
+      - event: [push, pull_request, manual, tag]
+
+  # ===========================================================================
+  # Type Check
+  # ===========================================================================
+
+  typecheck:
+    image: node:22-alpine
+    commands:
+      - npm run typecheck
+    depends_on:
+      - install
+    when:
+      - event: [push, pull_request, manual, tag]
+
+  # ===========================================================================
+  # Build
+  # ===========================================================================
+
+  build:
+    image: node:22-alpine
+    commands:
+      - npm run build
+    depends_on:
+      - install
+    when:
+      - event: [push, pull_request, manual, tag]
+
+  # ===========================================================================
+  # Test
+  # ===========================================================================
+
+  test:
+    image: node:22-alpine
+    commands:
+      - npm test -- --run
+    depends_on:
+      - install
+    when:
+      - event: [push, pull_request, manual, tag]
+
+  # ===========================================================================
+  # Lint
+  # ===========================================================================
+
+  lint:
+    image: node:22-alpine
+    commands:
+      - npm run lint
+    depends_on:
+      - install
+    when:
+      - event: [push, pull_request, manual, tag]
+
+  # ===========================================================================
+  # Format Check
+  # ===========================================================================
+
+  format:
+    image: node:22-alpine
+    commands:
+      - npm run format:check
+    depends_on:
+      - install
+    when:
+      - event: [push, pull_request, manual, tag]
+
+  # ===========================================================================
+  # Publish to Codeberg npm Registry (on tag events only)
+  # Codeberg is the source of truth - packages are published here
+  # ===========================================================================
+
+  publish:
+    image: node:22-alpine
+    environment:
+      NPM_REGISTRY_URL: https://codeberg.org/api/packages/npm
+      NPM_TOKEN:
+        from_secret: codeberg_npm_token
+    commands:
+      - |
+        echo "@nope-at:registry=https://codeberg.org/api/packages/npm" > .npmrc
+        echo "//codeberg.org/api/packages/npm/:_authToken=${NPM_TOKEN}" >> .npmrc
+        cat .npmrc
+        echo "Publishing to Codeberg npm registry..."
+        npm publish --access public
+    depends_on:
+      - typecheck
+      - build
+      - test
+      - lint
+      - format
+    when:
+      - event: tag
+
+  # ===========================================================================
+  # Git Tag and Push (on tag events only)
+  # Creates annotated git tags for published versions
+  # ===========================================================================
+
+  git-tag:
+    image: node:22-alpine
+    commands:
+      - |
+        echo "Creating git tag for v${CI_COMMIT_TAG}..."
+        git tag -m "v${CI_COMMIT_TAG}" v${CI_COMMIT_TAG}
+        git push origin v${CI_COMMIT_TAG}
+    depends_on:
+      - publish
+    when:
+      - event: tag

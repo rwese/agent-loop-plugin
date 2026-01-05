@@ -216,7 +216,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     state.countdownStarting = false
 
     if (hadCountdown) {
-      logger.debug("[cancelCountdown] Countdown cancelled", { sessionID, reason: reason ?? "unknown" })
+      logger.debug("[cancelCountdown] Countdown cancelled", {
+        sessionID,
+        reason: reason ?? "unknown",
+      })
     }
   }
 
@@ -308,7 +311,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     const logData = { sessionID, incompleteCount: freshIncompleteCount, totalTasks: total }
 
     try {
-      logger.debug(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, logData)
+      logger.debug(
+        `Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`,
+        logData
+      )
       logToFile(`Injecting continuation prompt (${freshIncompleteCount} tasks remaining)`, logData)
 
       await ctx.client.session.prompt({
@@ -411,7 +417,10 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
     const state = getState(sessionID)
     state.lastErrorAt = Date.now()
     cancelCountdown(sessionID, "session-error")
-    logger.debug("[session.error] Session error detected", { sessionID, isAbort: isAbortError(error) })
+    logger.debug("[session.error] Session error detected", {
+      sessionID,
+      isAbort: isAbortError(error),
+    })
   }
 
   /** Handle session idle - main trigger for continuation */
@@ -475,7 +484,9 @@ export function createTaskLoop(ctx: PluginContext, options: TaskLoopOptions = {}
       case "session.deleted":
         if (props?.info?.id) {
           cleanup(props.info.id)
-          logger.debug("[session.deleted] Session deleted: cleaned up", { sessionID: props.info.id })
+          logger.debug("[session.deleted] Session deleted: cleaned up", {
+            sessionID: props.info.id,
+          })
         }
         break
     }
