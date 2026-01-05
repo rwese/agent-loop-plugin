@@ -29,6 +29,7 @@ export function createTaskContinuation(ctx, options = {}) {
   const recoveringSessions = new Set()
   const errorCooldowns = new Map()
   const pendingCountdowns = new Map()
+  const sessionAgentModel = new Map()
   async function fetchTodos(sessionID) {
     try {
       const response = await ctx.client.session.todo({ path: { id: sessionID } })
@@ -36,6 +37,21 @@ export function createTaskContinuation(ctx, options = {}) {
     } catch {
       return []
     }
+  }
+  function updateSessionAgentModel(sessionID, eventAgent, eventModel) {
+    if (eventAgent || eventModel) {
+      sessionAgentModel.set(sessionID, {
+        agent: eventAgent,
+        model: eventModel,
+      })
+    }
+  }
+  function getAgentModel(sessionID) {
+    const tracked = sessionAgentModel.get(sessionID)
+    if (tracked && (tracked.agent || tracked.model)) {
+      return tracked
+    }
+    return { agent, model }
   }
   async function injectContinuation(sessionID) {
     const existingTimeout = pendingCountdowns.get(sessionID)
@@ -47,10 +63,15 @@ export function createTaskContinuation(ctx, options = {}) {
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) return
     const prompt = buildContinuationPrompt(todos)
+    const { agent: continuationAgent, model: continuationModel } = getAgentModel(sessionID)
     try {
       await ctx.client.session.prompt({
         path: { id: sessionID },
-        body: { agent, model, parts: [{ type: "text", text: prompt }] },
+        body: {
+          agent: continuationAgent,
+          model: continuationModel,
+          parts: [{ type: "text", text: prompt }],
+        },
         query: { directory: ctx.directory },
       })
     } catch {}
@@ -87,11 +108,12 @@ export function createTaskContinuation(ctx, options = {}) {
     const todos = await fetchTodos(sessionID)
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) {
+      const { agent: completionAgent, model: completionModel } = getAgentModel(sessionID)
       await ctx.client.session.prompt({
         path: { id: sessionID },
         body: {
-          agent,
-          model,
+          agent: completionAgent,
+          model: completionModel,
           noReply: true,
           parts: [{ type: "text", text: "All tasks completed!", ignored: true }],
         },
@@ -109,17 +131,26 @@ export function createTaskContinuation(ctx, options = {}) {
       pendingCountdowns.delete(sessionID)
     }
   }
-  const handleUserMessage = async (sessionID) => {
+  const handleUserMessage = async (sessionID, event) => {
     errorCooldowns.delete(sessionID)
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
       pendingCountdowns.delete(sessionID)
     }
+    if (event?.properties?.info) {
+      const info = event.properties.info
+      const messageAgent = info.agent
+      const messageModel = info.model
+      if (messageAgent || messageModel) {
+        updateSessionAgentModel(sessionID, messageAgent, messageModel)
+      }
+    }
   }
   const handleSessionDeleted = async (sessionID) => {
     recoveringSessions.delete(sessionID)
     errorCooldowns.delete(sessionID)
+    sessionAgentModel.delete(sessionID)
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
@@ -145,7 +176,7 @@ export function createTaskContinuation(ctx, options = {}) {
         await handleSessionError(sessionID)
         break
       case "message.updated":
-        await handleUserMessage(sessionID)
+        await handleUserMessage(sessionID, event)
         break
       case "session.deleted":
         await handleSessionDeleted(sessionID)
@@ -174,6 +205,7 @@ export function createTaskContinuation(ctx, options = {}) {
     pendingCountdowns.clear()
     recoveringSessions.clear()
     errorCooldowns.clear()
+    sessionAgentModel.clear()
   }
   return {
     handler,

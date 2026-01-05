@@ -1,3 +1,7 @@
+interface ModelSpec {
+  providerID: string
+  modelID: string
+}
 export interface Todo {
   id: string
   content: string
@@ -13,6 +17,8 @@ export interface LoopEvent {
       id?: string
       sessionID?: string
       role?: string
+      agent?: string
+      model?: string | ModelSpec
     }
     [key: string]: unknown
   }
@@ -22,7 +28,7 @@ export interface TaskContinuationOptions {
   errorCooldownMs?: number
   toastDurationMs?: number
   agent?: string
-  model?: string
+  model?: string | ModelSpec
 }
 export interface TaskContinuation {
   handler: (input: { event: LoopEvent }) => Promise<void>
@@ -41,7 +47,7 @@ interface PluginContext {
         }
         body: {
           agent?: string
-          model?: string
+          model?: string | ModelSpec
           noReply?: boolean
           parts: Array<{
             type: string

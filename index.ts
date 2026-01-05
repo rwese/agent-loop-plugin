@@ -1,9 +1,8 @@
 /**
  * Agent Loop Plugin - OpenCode Integration
  *
- * Provides agent loop mechanisms for OpenCode plugins including:
+ * Provides agent loop mechanisms for OpenCode plugins:
  * - Task Loop: Automatically continues sessions when incomplete tasks remain
- * - Iteration Loop: Continues iteration until completion signal is received
  *
  * ## Quick Start
  *
@@ -35,13 +34,8 @@ export type {
   PromptPart,
   SessionInfo,
   MessageInfo,
-  IterationLoopState,
-  CompleteLoopResult,
-  AdvisorEvaluationResult,
-  CompletionEvaluatorInfo,
   LogLevel,
   CountdownCallbackInfo,
-  IterationLoopOptions,
   TaskLoopOptions,
 } from "./types.js"
 

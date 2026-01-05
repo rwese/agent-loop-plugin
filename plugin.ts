@@ -237,13 +237,8 @@ export type {
   PromptPart,
   SessionInfo,
   MessageInfo,
-  IterationLoopState,
-  CompleteLoopResult,
-  AdvisorEvaluationResult,
-  CompletionEvaluatorInfo,
   LogLevel,
   CountdownCallbackInfo,
-  IterationLoopOptions,
   TaskLoopOptions,
 } from "./types.js"
 

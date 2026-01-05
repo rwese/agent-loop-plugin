@@ -101,39 +101,11 @@ export interface LoopEvent {
       id?: string
       sessionID?: string
       role?: string
+      agent?: string
+      model?: string | ModelSpec
     }
     [key: string]: unknown
   }
-}
-export interface IterationLoopState {
-  active: boolean
-  iteration: number
-  max_iterations: number
-  completion_marker: string
-  started_at: string
-  prompt: string
-  session_id?: string
-  agent?: string
-}
-export interface CompleteLoopResult {
-  success: boolean
-  iterations: number
-  message: string
-}
-export interface AdvisorEvaluationResult {
-  isComplete: boolean
-  feedback: string
-  missingItems?: string[]
-  confidence?: number
-}
-export interface CompletionEvaluatorInfo {
-  sessionID: string
-  iteration: number
-  maxIterations: number
-  prompt: string
-  transcript: string
-  complete: (summary?: string) => CompleteLoopResult
-  continueWithFeedback: (feedback: string, missingItems?: string[]) => Promise<void>
 }
 export type LogLevel = "silent" | "error" | "warn" | "info" | "debug"
 export interface Logger {
@@ -147,17 +119,6 @@ export interface CountdownCallbackInfo {
   incompleteCount: number
   totalCount: number
   inject: () => Promise<void>
-}
-export interface IterationLoopOptions {
-  defaultMaxIterations?: number
-  stateFilePath?: string
-  logger?: Logger
-  logLevel?: LogLevel
-  agent?: string
-  model?: string
-  outputFilePath?: string
-  onEvaluator?: (info: CompletionEvaluatorInfo) => Promise<AdvisorEvaluationResult>
-  getTranscript?: (sessionID: string) => Promise<string>
 }
 export interface TaskLoopOptions {
   countdownSeconds?: number
