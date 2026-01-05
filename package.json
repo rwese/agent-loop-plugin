@@ -75,7 +75,7 @@
   },
   "opencode": {
     "name": "agent-loop-plugin",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "description": "Task continuation and iteration loops for OpenCode plugins",
     "author": "OpenCode Community",
     "license": "MIT",
