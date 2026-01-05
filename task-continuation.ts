@@ -155,23 +155,6 @@ export function createTaskContinuation(
   // Track pending countdowns for cleanup
   const pendingCountdowns = new Map<string, ReturnType<typeof setTimeout>>()
 
-  async function sendStatus(sessionID: string, text: string): Promise<void> {
-    try {
-      await ctx.client.session.prompt({
-        path: { id: sessionID },
-        body: {
-          agent,
-          model,
-          noReply: true,
-          parts: [{ type: "text", text, ignored: true }],
-        },
-        query: { directory: ctx.directory },
-      })
-    } catch {
-      // Ignore errors when sending status updates
-    }
-  }
-
   async function fetchTodos(sessionID: string): Promise<Todo[]> {
     try {
       const response = await ctx.client.session.todo({ path: { id: sessionID } })
@@ -250,7 +233,17 @@ export function createTaskContinuation(
     const todos = await fetchTodos(sessionID)
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) {
-      await sendStatus(sessionID, `✅ All ${todos.length} tasks completed!`)
+      // Send completion status message
+      await ctx.client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          agent,
+          model,
+          noReply: true,
+          parts: [{ type: "text", text: "All tasks completed!", ignored: true }],
+        },
+        query: { directory: ctx.directory },
+      })
       return
     }
 

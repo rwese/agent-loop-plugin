@@ -29,20 +29,6 @@ export function createTaskContinuation(ctx, options = {}) {
   const recoveringSessions = new Set()
   const errorCooldowns = new Map()
   const pendingCountdowns = new Map()
-  async function sendStatus(sessionID, text) {
-    try {
-      await ctx.client.session.prompt({
-        path: { id: sessionID },
-        body: {
-          agent,
-          model,
-          noReply: true,
-          parts: [{ type: "text", text, ignored: true }],
-        },
-        query: { directory: ctx.directory },
-      })
-    } catch {}
-  }
   async function fetchTodos(sessionID) {
     try {
       const response = await ctx.client.session.todo({ path: { id: sessionID } })
@@ -101,7 +87,16 @@ export function createTaskContinuation(ctx, options = {}) {
     const todos = await fetchTodos(sessionID)
     const incompleteCount = getIncompleteCount(todos)
     if (incompleteCount === 0) {
-      await sendStatus(sessionID, `✅ All ${todos.length} tasks completed!`)
+      await ctx.client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          agent,
+          model,
+          noReply: true,
+          parts: [{ type: "text", text: "All tasks completed!", ignored: true }],
+        },
+        query: { directory: ctx.directory },
+      })
       return
     }
     scheduleContinuation(sessionID)
