@@ -1,116 +1,60 @@
 /**
- * Task Continuation Plugin - Minimal single-file implementation
+ * OpenCode Plugin - Task Continuation
  *
  * Automatically continues sessions when incomplete tasks remain.
  *
- * ## Features
- *
- * - Monitors `session.idle` events
- * - Fetches todo list via OpenCode API
- * - Injects continuation prompt if incomplete tasks exist
- * - Countdown with toast notification before continuation
- * - Error cooldown prevents infinite loops
- * - User messages cancel pending continuations
- *
- * ## Usage
- *
+ * @example
  * ```typescript
- * import { createTaskContinuation } from './task-continuation';
+ * import taskContinuation from "./plugin/taskcontinuation.js"
  *
- * export default function myPlugin(ctx: PluginContext) {
- *   const taskContinuation = createTaskContinuation(ctx, {
+ * export default function myPlugin(ctx) {
+ *   const tc = taskContinuation(ctx, {
  *     countdownSeconds: 3,
  *     errorCooldownMs: 5000,
- *   });
+ *   })
  *
- *   ctx.on('event', taskContinuation.handler);
+ *   ctx.on("event", tc.handler)
  *
- *   return { taskContinuation };
+ *   return { taskContinuation: tc }
  * }
  * ```
  */
 
-// ===========================================================================
-// Types (minimal, inlined)
-// ===========================================================================
+import { readFileSync } from "fs"
+import { fileURLToPath } from "url"
+import { dirname, join } from "path"
 
-/** Represents a single todo/task item */
-export interface Todo {
-  id: string
-  content: string
-  status: "pending" | "in_progress" | "completed" | "cancelled"
-  priority: string
-}
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
-/** Represents an event from the OpenCode plugin system */
-export interface LoopEvent {
-  type: string
-  properties?: {
-    sessionID?: string
-    error?: unknown
-    info?: { id?: string; sessionID?: string; role?: string }
-    [key: string]: unknown
-  }
-}
-
-/** Configuration options for the task continuation plugin */
-export interface TaskContinuationOptions {
-  countdownSeconds?: number
-  errorCooldownMs?: number
-  toastDurationMs?: number
-  agent?: string
-  model?: string
-}
-
-/** Public interface returned by createTaskContinuation */
-export interface TaskContinuation {
-  handler: (input: { event: LoopEvent }) => Promise<void>
-  markRecovering: (sessionID: string) => void
-  markRecoveryComplete: (sessionID: string) => void
-  cleanup: (sessionID: string) => void
-}
-
-/** Minimal plugin context interface */
-interface PluginContext {
-  directory: string
+// Inline types to avoid dependency on dist types
+const PluginContext = {
+  directory: "",
   client: {
     session: {
-      prompt(opts: {
-        path: { id: string }
-        body: {
-          agent?: string
-          model?: string
-          noReply?: boolean
-          parts: Array<{ type: string; text: string; ignored?: boolean }>
-        }
-        query?: { directory: string }
-      }): Promise<void>
-      todo(opts: { path: { id: string } }): Promise<Todo[] | { data: Todo[] }>
-    }
+      prompt: async () => {},
+      todo: async () => [],
+    },
     tui: {
-      showToast(opts: {
-        body: {
-          title: string
-          message: string
-          variant: "info" | "success" | "warning" | "error"
-          duration: number
-        }
-      }): Promise<void>
-    }
-  }
+      showToast: async () => {},
+    },
+  },
 }
 
-// ===========================================================================
-// Utilities
-// ===========================================================================
+const Todo = {
+  id: "",
+  content: "",
+  status: "pending",
+  priority: "",
+}
 
-const getIncompleteTodos = (todos: Todo[]) =>
-  todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
+const LoopEvent = {
+  type: "",
+  properties: {},
+}
 
-const getIncompleteCount = (todos: Todo[]): number => getIncompleteTodos(todos).length
-
-function buildContinuationPrompt(todos: Todo[]): string {
-  const pending = getIncompleteTodos(todos)
+function buildContinuationPrompt(todos) {
+  const pending = todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
   return `[SYSTEM - AUTO-CONTINUATION]
 
 You have ${pending.length} incomplete task(s). Work on them NOW without asking for permission.
@@ -127,14 +71,7 @@ INSTRUCTIONS:
 4. MUST work independently - you can solve everything without asking for permission.`
 }
 
-// ===========================================================================
-// Implementation
-// ===========================================================================
-
-export function createTaskContinuation(
-  ctx: PluginContext,
-  options: TaskContinuationOptions = {}
-): TaskContinuation {
+function createTaskContinuation(ctx, options = {}) {
   const {
     countdownSeconds = 2,
     errorCooldownMs = 3000,
@@ -143,18 +80,9 @@ export function createTaskContinuation(
     model,
   } = options
 
-  const sessions = new Map<
-    string,
-    {
-      lastErrorAt?: number
-      countdownTimer?: ReturnType<typeof setTimeout>
-      countdownInterval?: ReturnType<typeof setInterval>
-      isRecovering?: boolean
-      completionShown?: boolean
-    }
-  >()
+  const sessions = new Map()
 
-  function getState(sessionID: string) {
+  function getState(sessionID) {
     let state = sessions.get(sessionID)
     if (!state) {
       state = {}
@@ -163,7 +91,7 @@ export function createTaskContinuation(
     return state
   }
 
-  function cancelCountdown(sessionID: string): void {
+  function cancelCountdown(sessionID) {
     const state = sessions.get(sessionID)
     if (!state) return
     if (state.countdownTimer) clearTimeout(state.countdownTimer)
@@ -172,22 +100,18 @@ export function createTaskContinuation(
     state.countdownInterval = undefined
   }
 
-  function cleanup(sessionID: string): void {
+  function cleanup(sessionID) {
     cancelCountdown(sessionID)
     sessions.delete(sessionID)
   }
 
-  async function showToast(
-    title: string,
-    message: string,
-    variant: "info" | "success" | "warning" | "error"
-  ): Promise<void> {
+  async function showToast(title, message, variant) {
     await ctx.client.tui
       .showToast({ body: { title, message, variant, duration: toastDurationMs } })
       .catch(() => {})
   }
 
-  async function sendStatus(sessionID: string, text: string): Promise<void> {
+  async function sendStatus(sessionID, text) {
     try {
       await ctx.client.session.prompt({
         path: { id: sessionID },
@@ -199,12 +123,10 @@ export function createTaskContinuation(
         },
         query: { directory: ctx.directory },
       })
-    } catch {
-      // Ignore errors when sending status updates
-    }
+    } catch {}
   }
 
-  async function fetchTodos(sessionID: string): Promise<Todo[]> {
+  async function fetchTodos(sessionID) {
     try {
       const response = await ctx.client.session.todo({ path: { id: sessionID } })
       return Array.isArray(response) ? response : (response.data ?? [])
@@ -213,17 +135,19 @@ export function createTaskContinuation(
     }
   }
 
-  function isInCooldown(sessionID: string): boolean {
+  function isInCooldown(sessionID) {
     const state = sessions.get(sessionID)
     if (state?.isRecovering) return true
     if (state?.lastErrorAt && Date.now() - state.lastErrorAt < errorCooldownMs) return true
     return false
   }
 
-  async function injectContinuation(sessionID: string): Promise<void> {
+  async function injectContinuation(sessionID) {
     if (isInCooldown(sessionID)) return
     const todos = await fetchTodos(sessionID)
-    const incompleteCount = getIncompleteCount(todos)
+    const incompleteCount = todos.filter(
+      (t) => t.status !== "completed" && t.status !== "cancelled"
+    ).length
     if (incompleteCount === 0) return
     const prompt = buildContinuationPrompt(todos)
     try {
@@ -232,16 +156,10 @@ export function createTaskContinuation(
         body: { agent, model, parts: [{ type: "text", text: prompt }] },
         query: { directory: ctx.directory },
       })
-    } catch {
-      // Ignore errors when injecting continuation
-    }
+    } catch {}
   }
 
-  async function startCountdown(
-    sessionID: string,
-    incompleteCount: number,
-    _total: number
-  ): Promise<void> {
+  async function startCountdown(sessionID, incompleteCount) {
     const state = getState(sessionID)
     if (state.countdownTimer) cancelCountdown(sessionID)
     await showToast(
@@ -266,11 +184,13 @@ export function createTaskContinuation(
     }, countdownSeconds * 1000)
   }
 
-  const handleSessionIdle = async (sessionID: string): Promise<void> => {
+  async function handleSessionIdle(sessionID) {
     if (isInCooldown(sessionID)) return
     const todos = await fetchTodos(sessionID)
     const state = getState(sessionID)
-    const incompleteCount = getIncompleteCount(todos)
+    const incompleteCount = todos.filter(
+      (t) => t.status !== "completed" && t.status !== "cancelled"
+    ).length
     if (incompleteCount === 0) {
       if (!state.completionShown) {
         state.completionShown = true
@@ -279,16 +199,16 @@ export function createTaskContinuation(
       return
     }
     state.completionShown = false
-    await startCountdown(sessionID, incompleteCount, todos.length)
+    await startCountdown(sessionID, incompleteCount)
   }
 
-  const handleSessionError = (sessionID: string): void => {
+  function handleSessionError(sessionID) {
     const state = getState(sessionID)
     state.lastErrorAt = Date.now()
     cancelCountdown(sessionID)
   }
 
-  const handleUserMessage = (sessionID: string): void => {
+  function handleUserMessage(sessionID) {
     const state = sessions.get(sessionID)
     if (state) {
       state.lastErrorAt = undefined
@@ -296,7 +216,7 @@ export function createTaskContinuation(
     }
   }
 
-  function extractSessionID(event: LoopEvent): string | undefined {
+  function extractSessionID(event) {
     const props = event.properties
     if (props?.sessionID && typeof props.sessionID === "string") return props.sessionID
     if (props?.info?.sessionID && typeof props.info.sessionID === "string")
@@ -305,7 +225,7 @@ export function createTaskContinuation(
     return undefined
   }
 
-  const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
+  const handler = async ({ event }) => {
     const sessionID = extractSessionID(event)
     if (!sessionID) return
     switch (event.type) {
@@ -324,16 +244,19 @@ export function createTaskContinuation(
     }
   }
 
-  const markRecovering = (sessionID: string): void => {
+  const markRecovering = (sessionID) => {
     const state = getState(sessionID)
     state.isRecovering = true
     cancelCountdown(sessionID)
   }
 
-  const markRecoveryComplete = (sessionID: string): void => {
+  const markRecoveryComplete = (sessionID) => {
     const state = sessions.get(sessionID)
     if (state) state.isRecovering = false
   }
 
   return { handler, markRecovering, markRecoveryComplete, cleanup }
 }
+
+export default createTaskContinuation
+export { createTaskContinuation }

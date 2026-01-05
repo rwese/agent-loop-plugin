@@ -3,11 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import type { PluginContext, Todo, LoopEvent } from "../types.js"
+import type { Todo, LoopEvent } from "../task-continuation.js"
 import { createTaskContinuation } from "../task-continuation.js"
 
 // Create a mock context
-function createMockContext(): PluginContext {
+function createMockContext(): any {
   const mockSession = {
     id: "test-session",
     get: vi.fn(),
@@ -23,7 +23,7 @@ function createMockContext(): PluginContext {
   return {
     directory: "/test/directory",
     client: {
-      session: mockSession as unknown as PluginContext["client"]["session"],
+      session: mockSession as any,
       tui: mockTui,
     },
   }

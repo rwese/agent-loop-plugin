@@ -1,7 +1,7 @@
 const getIncompleteTodos = (todos) =>
   todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
 const getIncompleteCount = (todos) => getIncompleteTodos(todos).length
-function buildContinuationPrompt(todos, agent) {
+function buildContinuationPrompt(todos) {
   const pending = getIncompleteTodos(todos)
   return `[SYSTEM - AUTO-CONTINUATION]
 
@@ -94,7 +94,7 @@ export function createTaskContinuation(ctx, options = {}) {
       })
     } catch {}
   }
-  async function startCountdown(sessionID, incompleteCount, total) {
+  async function startCountdown(sessionID, incompleteCount, _total) {
     const state = getState(sessionID)
     if (state.countdownTimer) cancelCountdown(sessionID)
     await showToast(
@@ -164,9 +164,7 @@ export function createTaskContinuation(ctx, options = {}) {
         await handleSessionIdle(sessionID)
         break
       case "message.updated":
-        if (event.properties?.info?.role === "user") {
-          handleUserMessage(sessionID)
-        }
+        if (event.properties?.info?.role === "user") handleUserMessage(sessionID)
         break
       case "session.deleted":
         cleanup(sessionID)
@@ -182,11 +180,6 @@ export function createTaskContinuation(ctx, options = {}) {
     const state = sessions.get(sessionID)
     if (state) state.isRecovering = false
   }
-  return {
-    handler,
-    markRecovering,
-    markRecoveryComplete,
-    cleanup,
-  }
+  return { handler, markRecovering, markRecoveryComplete, cleanup }
 }
 //# sourceMappingURL=task-continuation.js.map

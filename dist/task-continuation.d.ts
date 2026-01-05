@@ -1,4 +1,22 @@
-import type { PluginContext, LoopEvent } from "./types.js"
+export interface Todo {
+  id: string
+  content: string
+  status: "pending" | "in_progress" | "completed" | "cancelled"
+  priority: string
+}
+export interface LoopEvent {
+  type: string
+  properties?: {
+    sessionID?: string
+    error?: unknown
+    info?: {
+      id?: string
+      sessionID?: string
+      role?: string
+    }
+    [key: string]: unknown
+  }
+}
 export interface TaskContinuationOptions {
   countdownSeconds?: number
   errorCooldownMs?: number
@@ -12,9 +30,54 @@ export interface TaskContinuation {
   markRecoveryComplete: (sessionID: string) => void
   cleanup: (sessionID: string) => void
 }
+interface PluginContext {
+  directory: string
+  client: {
+    session: {
+      prompt(opts: {
+        path: {
+          id: string
+        }
+        body: {
+          agent?: string
+          model?: string
+          noReply?: boolean
+          parts: Array<{
+            type: string
+            text: string
+            ignored?: boolean
+          }>
+        }
+        query?: {
+          directory: string
+        }
+      }): Promise<void>
+      todo(opts: {
+        path: {
+          id: string
+        }
+      }): Promise<
+        | Todo[]
+        | {
+            data: Todo[]
+          }
+      >
+    }
+    tui: {
+      showToast(opts: {
+        body: {
+          title: string
+          message: string
+          variant: "info" | "success" | "warning" | "error"
+          duration: number
+        }
+      }): Promise<void>
+    }
+  }
+}
 export declare function createTaskContinuation(
   ctx: PluginContext,
   options?: TaskContinuationOptions
 ): TaskContinuation
-export type { PluginContext, Todo, LoopEvent } from "./types.js"
+export {}
 //# sourceMappingURL=task-continuation.d.ts.map

@@ -7,8 +7,7 @@
  * ## Quick Start
  *
  * ```typescript
- * import { createTaskContinuation } from './agent-loop';
- * import type { PluginContext } from './agent-loop';
+ * import { createTaskContinuation, type Todo, type LoopEvent } from './agent-loop';
  *
  * export default function myPlugin(ctx: PluginContext) {
  *   const taskContinuation = createTaskContinuation(ctx, {
@@ -25,9 +24,13 @@
  * @module agent-loop-plugin
  */
 
-// Export types
-export type { PluginContext, Todo, LoopEvent } from "./types.js"
+// Export types from task-continuation (inlined, no separate types.ts)
+export type {
+  Todo,
+  LoopEvent,
+  TaskContinuation,
+  TaskContinuationOptions,
+} from "./task-continuation.js"
 
 // Export the simplified task continuation plugin
 export { createTaskContinuation } from "./task-continuation.js"
-export type { TaskContinuation, TaskContinuationOptions } from "./task-continuation.js"

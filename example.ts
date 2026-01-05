@@ -4,13 +4,12 @@
  * This demonstrates the minimal task continuation plugin.
  */
 
-import { createTaskContinuation } from "./index.js"
-import type { PluginContext, LoopEvent } from "./index.js"
+import { createTaskContinuation, type LoopEvent } from "./index.js"
 
 /**
  * Example OpenCode plugin using task continuation
  */
-export default function examplePlugin(ctx: PluginContext) {
+export default function examplePlugin(ctx: any) {
   // Create the task continuation handler
   const taskContinuation = createTaskContinuation(ctx, {
     countdownSeconds: 3,
@@ -65,7 +64,7 @@ export default function examplePlugin(ctx: PluginContext) {
 /**
  * Example 1: Basic usage with automatic task continuation
  */
-export function example1_AutoTaskContinuation(ctx: PluginContext) {
+export function example1_AutoTaskContinuation(ctx: any) {
   const plugin = examplePlugin(ctx)
 
   // That's it! Task continuation will automatically continue when:
@@ -79,7 +78,7 @@ export function example1_AutoTaskContinuation(ctx: PluginContext) {
 /**
  * Example 2: Error recovery with pause/resume
  */
-export function example2_ErrorRecovery(ctx: PluginContext) {
+export function example2_ErrorRecovery(ctx: any) {
   const plugin = examplePlugin(ctx)
 
   const handleError = async (event: LoopEvent) => {
@@ -102,7 +101,7 @@ export function example2_ErrorRecovery(ctx: PluginContext) {
 /**
  * Example 3: Graceful cleanup
  */
-export function example3_GracefulShutdown(ctx: PluginContext) {
+export function example3_GracefulShutdown(ctx: any) {
   const plugin = examplePlugin(ctx)
 
   const cleanup = (sessionID: string) => {
