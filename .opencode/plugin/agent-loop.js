@@ -1,14 +1,16 @@
 /**
- * Agent Loop Plugin
+ * Agent Loop Plugin v2.1.0
  *
  * Integrates the oc-agent-loop library for automatic task continuation
  * and iteration-based loops.
  *
  * @see https://codeberg.org/nope-at/oc-agent-loop
  *
+ * Version: 2.1.0 (Advisor-based iteration loop completion)
+ *
  * Features:
  * - Task Loop: Automatically continues sessions when incomplete tasks remain
- * - Iteration Loop: Iteration-based loop with tool-based completion
+ * - Iteration Loop: Iteration-based loop with Advisor-based completion detection
  *
  * Usage:
  *   npm install oc-agent-loop
@@ -23,6 +25,9 @@
  * - AGENT_LOOP_LOG_LEVEL: Log level - silent|error|warn|info|debug (default: "info")
  * - AGENT_LOOP_HELP_AGENT: Subagent name for help/feedback (e.g., "advisor")
  */
+
+/** Version of oc-agent-loop package being used */
+const PLUGIN_VERSION = "2.1.0"
 
 import {
   createTaskLoop,
