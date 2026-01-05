@@ -73,6 +73,9 @@
     "type": "git",
     "url": "ssh://git@codeberg.org/nope-at/oc-agent-loop.git"
   },
+  "publishConfig": {
+    "registry": "https://codeberg.org/api/packages/npm"
+  },
   "opencode": {
     "name": "agent-loop-plugin",
     "version": "3.1.2",
