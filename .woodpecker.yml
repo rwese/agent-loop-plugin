@@ -6,6 +6,7 @@ steps:
   install:
     image: node:22-alpine
     commands:
+      - apk add --no-cache git
       - npm ci
     when:
       - event: [push, pull_request, manual, tag]
@@ -17,6 +18,7 @@ steps:
   typecheck:
     image: node:22-alpine
     commands:
+      - apk add --no-cache git
       - npm run typecheck
     depends_on:
       - install
@@ -30,6 +32,7 @@ steps:
   build:
     image: node:22-alpine
     commands:
+      - apk add --no-cache git
       - npm run build
     depends_on:
       - install
@@ -43,6 +46,7 @@ steps:
   test:
     image: node:22-alpine
     commands:
+      - apk add --no-cache git
       - npm test -- --run
     depends_on:
       - install
@@ -56,6 +60,7 @@ steps:
   lint:
     image: node:22-alpine
     commands:
+      - apk add --no-cache git
       - npm run lint
     depends_on:
       - install
@@ -69,6 +74,7 @@ steps:
   format:
     image: node:22-alpine
     commands:
+      - apk add --no-cache git
       - npm run format:check
     depends_on:
       - install
@@ -87,6 +93,7 @@ steps:
       CODEBERG_TOKEN:
         from_secret: CODEBERG_TOKEN
     commands:
+      - apk add --no-cache git
       - |
         echo "@nope-at:registry=https://codeberg.org/api/packages/npm" > .npmrc
         echo "//codeberg.org/api/packages/npm/:_authToken=$CODEBERG_TOKEN" >> .npmrc
