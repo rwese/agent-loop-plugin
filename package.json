@@ -68,10 +68,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://codeberg.org/nope-at/agent-loop-plugin.git"
+    "url": "git@codeberg.org:nope-at/agent-loop-plugin.git"
   },
   "lint-staged": {
     "*.{ts,js,json,md}": "prettier --write",
-    "*.ts": "npm test -- --run"
+    "**/*.test.ts": "npm test -- --run"
   }
 }

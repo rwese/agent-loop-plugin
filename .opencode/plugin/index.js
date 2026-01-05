@@ -35,7 +35,7 @@ import {
   sendIgnoredMessage,
   parseIterationLoopTag,
   buildIterationStartPrompt,
-} from "agent-loop-plugin"
+} from "../../index.js"
 import { z } from "zod"
 
 // Simple tool helper that wraps the tool definition
