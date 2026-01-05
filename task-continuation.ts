@@ -500,12 +500,44 @@ export function createTaskContinuation(
 
     const prompt = buildContinuationPrompt(todos)
 
-    // Brief delay to allow agent/model from message events to be captured
-    // This is a timing fix - message events may arrive after session.idle but before continuation
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Poll to get the latest agent/model with priority
+    // This handles timing issues where message events may not have been processed yet
+    let agentModel: {
+      agent?: string | undefined
+      model?: string | { providerID: string; modelID: string } | undefined
+    } | null = null
+    let attempts = 0
+    const maxAttempts = 10
 
-    // Re-fetch agent/model right before continuation to get latest values
-    const { agent: continuationAgent, model: continuationModel } = await getAgentModel(sessionID)
+    while (!agentModel || (!agentModel.agent && !agentModel.model && attempts < maxAttempts)) {
+      if (attempts > 0) {
+        // Wait between polling attempts
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+
+      // Try the full priority chain (tracked → session.get → session.messages → configured)
+      agentModel = await getAgentModel(sessionID)
+
+      // Check if we got a usable value
+      if (agentModel && (agentModel.agent || agentModel.model)) {
+        break
+      }
+
+      attempts++
+
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Polling for agent/model", {
+          sessionID,
+          attempt: attempts,
+          maxAttempts,
+          hasAgent: !!agentModel?.agent,
+          hasModel: !!agentModel?.model,
+        })
+      }
+    }
+
+    const continuationAgent = agentModel?.agent
+    const continuationModel = agentModel?.model
 
     if (typeof logger !== "undefined" && logger) {
       logger.debug("Injecting continuation prompt", {

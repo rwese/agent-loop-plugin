@@ -252,8 +252,30 @@ export function createTaskContinuation(ctx, options = {}) {
       return
     }
     const prompt = buildContinuationPrompt(todos)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const { agent: continuationAgent, model: continuationModel } = await getAgentModel(sessionID)
+    let agentModel = null
+    let attempts = 0
+    const maxAttempts = 10
+    while (!agentModel || (!agentModel.agent && !agentModel.model && attempts < maxAttempts)) {
+      if (attempts > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      agentModel = await getAgentModel(sessionID)
+      if (agentModel && (agentModel.agent || agentModel.model)) {
+        break
+      }
+      attempts++
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Polling for agent/model", {
+          sessionID,
+          attempt: attempts,
+          maxAttempts,
+          hasAgent: !!agentModel?.agent,
+          hasModel: !!agentModel?.model,
+        })
+      }
+    }
+    const continuationAgent = agentModel?.agent
+    const continuationModel = agentModel?.model
     if (typeof logger !== "undefined" && logger) {
       logger.debug("Injecting continuation prompt", {
         sessionID,
