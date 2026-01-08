@@ -227,6 +227,18 @@ export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
             break
           }
 
+          case "session.active":
+          case "session.busy": {
+            // Agent is processing - cancel any pending continuation
+            if (config.taskLoop) {
+              const state = sessionState.get(sessionID)
+              if (state?.taskContinuation) {
+                await state.taskContinuation.handler({ event })
+              }
+            }
+            break
+          }
+
           case "session.deleted": {
             // Cleanup session state
             const state = sessionState.get(sessionID)

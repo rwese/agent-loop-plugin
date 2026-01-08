@@ -843,6 +843,39 @@ export function createTaskContinuation(
     }
   }
 
+  /**
+   * Handle session.active events - agent is now processing user input.
+   * This cancels any pending continuation as the user has interrupted.
+   */
+  const handleSessionActive = async (sessionID: string): Promise<void> => {
+    // When session becomes active, cancel any pending continuation
+    // This handles the case where users interrupt the agent during processing
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Session became active, cancelled pending countdown", { sessionID })
+      }
+    }
+  }
+
+  /**
+   * Handle session.busy events - agent is busy processing.
+   * Similar to session.active, cancel any pending continuation.
+   */
+  const handleSessionBusy = async (sessionID: string): Promise<void> => {
+    // When session becomes busy, cancel any pending continuation
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Session became busy, cancelled pending countdown", { sessionID })
+      }
+    }
+  }
+
   function extractSessionID(event: LoopEvent): string | undefined {
     const props = event.properties
     if (props?.sessionID && typeof props.sessionID === "string") return props.sessionID
@@ -868,6 +901,12 @@ export function createTaskContinuation(
         break
       case "session.deleted":
         await handleSessionDeleted(sessionID)
+        break
+      case "session.active":
+        await handleSessionActive(sessionID)
+        break
+      case "session.busy":
+        await handleSessionBusy(sessionID)
         break
     }
   }
