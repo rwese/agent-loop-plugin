@@ -43,6 +43,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
@@ -60,6 +61,8 @@ jobs:
         run: npm run build
 
       - name: Publish to GitHub Packages
-        run: npm publish
+        run: |
+          echo "Publishing @rwese/agent-loop-plugin@$(node -p "require('./package.json').version")"
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
