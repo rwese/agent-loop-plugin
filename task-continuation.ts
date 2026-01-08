@@ -40,7 +40,6 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { loadPromptTemplate } from "./prompts.js"
 
 // ===========================================================================
 // Logging utilities - file only, minimal console output
@@ -174,8 +173,6 @@ export interface TaskContinuationOptions {
   model?: string | ModelSpec
   /** Path to log file for debugging */
   logFilePath?: string
-  /** Path to custom continuation prompt template file */
-  continuationPromptFile?: string
 }
 
 /** Public interface returned by createTaskContinuation */
@@ -244,26 +241,9 @@ const getIncompleteTodos = (todos: Todo[]) =>
 
 const getIncompleteCount = (todos: Todo[]): number => getIncompleteTodos(todos).length
 
-function buildContinuationPrompt(todos: Todo[], promptFilePath?: string): string {
+function buildContinuationPrompt(todos: Todo[]): string {
   const pending = getIncompleteTodos(todos)
 
-  // Try to load custom prompt template from file
-  if (promptFilePath) {
-    const todoList = pending.map((t, i) => `${i + 1}. [${t.status}] ${t.content}`).join("\n")
-
-    const customPrompt = loadPromptTemplate(promptFilePath, {
-      incompleteCount: pending.length,
-      todoList: todoList,
-      totalCount: todos.length,
-      completedCount: todos.length - pending.length,
-    })
-
-    if (customPrompt) {
-      return customPrompt
-    }
-  }
-
-  // Fall back to default prompt
   return `[SYSTEM - AUTO-CONTINUATION]
 
 You have ${pending.length} incomplete task(s). Work on them NOW without asking for permission.
@@ -295,7 +275,6 @@ export function createTaskContinuation(
     agent,
     model,
     logFilePath,
-    continuationPromptFile,
   } = options
 
   // Create file logger - logs nothing to console
@@ -537,7 +516,7 @@ export function createTaskContinuation(
       return
     }
 
-    const prompt = buildContinuationPrompt(todos, continuationPromptFile)
+    const prompt = buildContinuationPrompt(todos)
 
     // Poll to get the latest agent/model with priority
     // This handles timing issues where message events may not have been processed yet

@@ -192,6 +192,4 @@ export interface TaskContinuationOptions {
   model?: string
   /** Path to log file for debugging */
   logFilePath?: string
-  /** Path to custom continuation prompt template file */
-  continuationPromptFile?: string
 }
