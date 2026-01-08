@@ -23,7 +23,7 @@ This plugin provides automatic task continuation for OpenCode sessions. When a s
 ## Installation
 
 ```bash
-npm install @rwese/agent-loop-plugin
+npm install @frugally3683/agent-loop-plugin
 ```
 
 ## Usage
@@ -31,7 +31,7 @@ npm install @rwese/agent-loop-plugin
 ### Basic Usage
 
 ```typescript
-import agentLoopPlugin from "@rwese/agent-loop-plugin"
+import agentLoopPlugin from "@frugally3683/agent-loop-plugin"
 
 // In your OpenCode configuration
 export default agentLoopPlugin
@@ -40,7 +40,7 @@ export default agentLoopPlugin
 ### Custom Options
 
 ```typescript
-import { createAgentLoopPlugin } from "@rwese/agent-loop-plugin"
+import { createAgentLoopPlugin } from "@frugally3683/agent-loop-plugin"
 
 const plugin = createAgentLoopPlugin({
   countdownSeconds: 3, // Seconds to wait before continuation
@@ -60,7 +60,7 @@ export default plugin
 For more control, use the core function directly:
 
 ```typescript
-import { createTaskContinuation } from "@rwese/agent-loop-plugin"
+import { createTaskContinuation } from "@frugally3683/agent-loop-plugin"
 
 export default function myPlugin(ctx: PluginContext) {
   const taskContinuation = createTaskContinuation(ctx, {

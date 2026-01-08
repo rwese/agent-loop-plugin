@@ -62,7 +62,7 @@ jobs:
 
       - name: Publish to npm
         run: |
-          echo "Publishing @rwese/agent-loop-plugin@$(node -p "require('./package.json').version")"
+          echo "Publishing @frugally3683/agent-loop-plugin@$(node -p "require('./package.json').version")"
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

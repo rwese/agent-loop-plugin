@@ -1,5 +1,5 @@
 {
-  "name": "@rwese/agent-loop-plugin",
+  "name": "@frugally3683/agent-loop-plugin",
   "version": "4.5.2",
   "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
   "type": "module",
