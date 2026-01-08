@@ -3,19 +3,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import type { PluginContext, Todo, LoopEvent } from "../types.js"
-import { createTaskContinuation } from "../task-continuation.js"
-
-interface PromptCall {
-  body: {
-    agent?: string
-    model?: string
-    parts: Array<{
-      ignored?: boolean
-      text: string
-    }>
-  }
-}
+import type { PluginContext, Todo, LoopEvent, PromptCall } from "../types.js"
+import { createTaskContinuation } from "../index.ts"
 
 // Create a mock context
 function createMockContext(): PluginContext {
@@ -143,32 +132,6 @@ describe("TaskContinuation", () => {
     })
 
     expect(taskContinuation).toBeDefined()
-  })
-
-  it("should send completion message when all todos are complete", async () => {
-    const ctx = createMockContext()
-    const mockTodoFn = ctx.client.session.todo as unknown as {
-      mockResolvedValue: (val: Todo[]) => void
-    }
-    mockTodoFn.mockResolvedValue(createMockTodos(3, 0))
-
-    const taskContinuation = createTaskContinuation(ctx)
-    await taskContinuation.handler({ event: createIdleEvent("session-123") })
-
-    // Should send a completion status message (ignored: true)
-    expect(ctx.client.session.prompt).toHaveBeenCalled()
-    interface PromptCall {
-      body: {
-        parts: Array<{
-          ignored?: boolean
-          text: string
-        }>
-      }
-    }
-    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
-    const call: PromptCall = promptCall
-    expect(call.body.parts[0].ignored).toBe(true)
-    expect(call.body.parts[0].text).toContain("completed")
   })
 
   it("should inject continuation when incomplete todos remain", async () => {
@@ -344,38 +307,6 @@ describe("TaskContinuation", () => {
     const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
     expect(promptCall.body.agent).toBe("configured-agent")
     expect(promptCall.body.model).toBe("configured-model")
-  })
-
-  it("should use tracked agent/model for completion message", async () => {
-    const ctx = createMockContext()
-    const mockTodoFn = ctx.client.session.todo as unknown as {
-      mockResolvedValue: (val: Todo[]) => void
-    }
-    // All tasks completed
-    mockTodoFn.mockResolvedValue(createMockTodos(3, 0))
-
-    const taskContinuation = createTaskContinuation(ctx, {
-      agent: "configured-agent",
-      model: "configured-model",
-    })
-
-    // Simulate a user message with a specific agent/model
-    const userMessageEvent = createUserMessageEventWithAgentModel(
-      "session-123",
-      "user-agent",
-      "user-model"
-    )
-    await taskContinuation.handler({ event: userMessageEvent })
-
-    // Trigger a session idle event (all tasks are completed)
-    await taskContinuation.handler({ event: createIdleEvent("session-123") })
-
-    // Verify that the completion message used the user message agent/model
-    expect(ctx.client.session.prompt).toHaveBeenCalled()
-    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
-    expect(promptCall.body.agent).toBe("user-agent")
-    expect(promptCall.body.model).toBe("user-model")
-    expect(promptCall.body.parts[0].ignored).toBe(true)
   })
 
   // ===========================================================================

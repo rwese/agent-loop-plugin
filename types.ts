@@ -193,3 +193,28 @@ export interface TaskContinuationOptions {
   /** Path to log file for debugging */
   logFilePath?: string
 }
+
+/** Public interface returned by createTaskContinuation */
+export interface TaskContinuation {
+  /** Event handler for session events */
+  handler: (input: { event: LoopEvent }) => Promise<void>
+  /** Mark a session as recovering (pauses auto-continuation) */
+  markRecovering: (sessionID: string) => void
+  /** Mark recovery as complete (resumes auto-continuation) */
+  markRecoveryComplete: (sessionID: string) => void
+  /** Cancel any pending continuation for a session and clear related state */
+  cancel: (sessionID: string) => void
+  /** Cleanup session state */
+  cleanup: () => Promise<void>
+}
+
+export interface PromptCall {
+  body: {
+    agent?: string
+    model?: string
+    parts: Array<{
+      ignored?: boolean
+      text: string
+    }>
+  }
+}
