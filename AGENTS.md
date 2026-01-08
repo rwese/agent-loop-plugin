@@ -101,12 +101,22 @@ git push && git push --tags
 
 The loops respond to these OpenCode events:
 
-| Event             | Task Loop             | Iteration Loop          |
-| ----------------- | --------------------- | ----------------------- |
-| `session.idle`    | Check todos, continue | Prompt to continue/done |
-| `session.error`   | Pause continuation    | Mark recovering         |
-| `session.deleted` | Clean up state        | Clear loop state        |
-| `message.updated` | Cancel countdown      | Clear iteration lock    |
+| Event             | Task Loop                               | Iteration Loop          |
+| ----------------- | --------------------------------------- | ----------------------- |
+| `session.idle`    | Check todos, continue                   | Prompt to continue/done |
+| `session.error`   | Pause continuation, detect interruption | Mark recovering         |
+| `session.status`  | Detect idle after interruption          | -                       |
+| `session.active`  | Cancel countdown (user interrupting)    | -                       |
+| `session.busy`    | Cancel countdown (agent processing)     | -                       |
+| `session.deleted` | Clean up state                          | Clear loop state        |
+| `message.updated` | Cancel countdown, capture agent/model   | Clear iteration lock    |
+
+**Interruption Detection:** The Task Loop detects interruptions (ESC key) by:
+
+1. Checking `session.error` events for abort/cancellation errors
+2. Checking `message.updated` events for error fields in assistant messages
+3. Checking `session.status` events to detect idle state after recent errors
+4. Canceling pending countdowns and showing toast notification
 
 ## Iteration Loop Completion
 
