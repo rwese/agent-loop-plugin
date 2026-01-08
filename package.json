@@ -30,7 +30,6 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
-    "prepare": "husky",
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
     "version:major": "npm version major && git push && git push --tags"
@@ -53,8 +52,6 @@
     "@typescript-eslint/parser": "^8.51.0",
     "@vitest/coverage-v8": "^4.0.16",
     "eslint": "^9.39.2",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.51.0",
@@ -63,8 +60,7 @@
   "files": [
     "dist",
     "plugin.ts",
-    "README.md",
-    "CHANGELOG.md"
+    "README.md"
   ],
   "repository": {
     "type": "git",
@@ -86,10 +82,6 @@
   "funding": {
     "type": "github",
     "url": "https://github.com/sponsors/rwese"
-  },
-  "lint-staged": {
-    "*.{ts,js,json,md}": "prettier --write",
-    "**/*.test.ts": "npm test -- --run"
   },
   "dependencies": {}
 }
