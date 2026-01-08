@@ -1,6 +1,6 @@
 {
   "name": "@frugally3683/agent-loop-plugin",
-  "version": "4.5.6",
+  "version": "4.5.7",
   "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
   "type": "module",
   "main": "dist/index.js",
