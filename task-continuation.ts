@@ -11,6 +11,18 @@
  * - Countdown with toast notification before continuation
  * - User messages cancel pending continuations
  *
+ * ## Message Handling
+ *
+ * OpenCode sends multiple `message.updated` events for the same message.
+ * This plugin filters genuine user input from message updates using:
+ *
+ * 1. **Message ID tracking** - Only process each message ID once per session
+ * 2. **Summary detection** - Messages with summaries are updates, not new input
+ * 3. **Role check** - Must be role="user" to cancel countdown
+ *
+ * This prevents message updates (adding summaries, etc.) from incorrectly
+ * cancelling the countdown timer.
+ *
  * ## Usage
  *
  * ```typescript
@@ -28,7 +40,7 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { loadPromptTemplate, getDefaultContinuationPromptPath } from "./prompts.js"
+import { loadPromptTemplate } from "./prompts.js"
 
 // ===========================================================================
 // Logging utilities - file only, minimal console output
@@ -295,6 +307,11 @@ export function createTaskContinuation(
 
   // Track pending countdowns for cleanup
   const pendingCountdowns = new Map<string, ReturnType<typeof setTimeout>>()
+
+  // Track the last processed message ID for each session to avoid re-processing
+  // the same message multiple times (OpenCode sends multiple message.updated events
+  // with the same ID for a single message as it gets updated with summary, etc.)
+  const lastProcessedMessageID = new Map<string, string>()
 
   // Track the last used agent/model for each session (from user messages)
   const sessionAgentModel = new Map<string, { agent?: string; model?: string | ModelSpec }>()
@@ -696,6 +713,24 @@ export function createTaskContinuation(
     }
   }
 
+  /**
+   * Handle message.updated events from OpenCode.
+   *
+   * IMPORTANT: OpenCode sends multiple message.updated events for the same message:
+   * 1. Initial message creation
+   * 2. When the message gets a summary field (message update)
+   * 3. When other metadata changes
+   *
+   * We must distinguish GENUINE new user input from message updates to avoid
+   * incorrectly cancelling the countdown timer.
+   *
+   * Message filtering criteria:
+   * - role === "user" - Must be a user message (not assistant/system)
+   * - !summary - Must NOT have a summary field (messages with summaries are updates)
+   * - New message ID - Must be a different ID than last processed
+   *
+   * Only genuine new user messages cancel the pending countdown.
+   */
   const handleUserMessage = async (sessionID: string, event?: LoopEvent): Promise<void> => {
     if (typeof logger !== "undefined" && logger) {
       logger.debug("handleUserMessage called", {
@@ -712,32 +747,74 @@ export function createTaskContinuation(
     // Clear error cooldown on user message
     errorCooldowns.delete(sessionID)
 
-    // Clear any pending countdown
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
+    // Check if this is an actual new user message (not a re-processed message)
+    const info = event?.properties?.info
+    const messageID = (info as { id?: string })?.id
+    const role = (info as { role?: string })?.role
+    const summary = (info as { summary?: unknown })?.summary
+
+    // Track this message ID as processed
+    if (messageID) {
+      const lastProcessed = lastProcessedMessageID.get(sessionID)
+      if (lastProcessed !== messageID) {
+        // This is a genuinely new message
+        lastProcessedMessageID.set(sessionID, messageID)
+
+        // Only cancel countdown for NEW user messages (role === "user")
+        // AND that don't have a summary (messages with summaries are updates to existing messages)
+        // This prevents the countdown from being cancelled by message updates/summaries
+        if (role === "user" && !summary) {
+          const existingTimeout = pendingCountdowns.get(sessionID)
+          if (existingTimeout) {
+            clearTimeout(existingTimeout)
+            pendingCountdowns.delete(sessionID)
+            if (typeof logger !== "undefined" && logger) {
+              logger.debug("New user message cancelled pending countdown", { sessionID, messageID })
+            }
+          }
+        } else if (role === "user" && summary) {
+          if (typeof logger !== "undefined" && logger) {
+            logger.debug("Message update with summary, NOT cancelling countdown", {
+              sessionID,
+              messageID,
+              hasSummary: !!summary,
+            })
+          }
+        }
+      }
+    } else if (role === "user" && !summary) {
+      // If no message ID but role is user and no summary, treat as new message
+      const existingTimeout = pendingCountdowns.get(sessionID)
+      if (existingTimeout) {
+        clearTimeout(existingTimeout)
+        pendingCountdowns.delete(sessionID)
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("User message (no ID, no summary) cancelled pending countdown", {
+            sessionID,
+          })
+        }
+      }
     }
 
     // Capture agent/model from user message if available
     if (event?.properties?.info) {
-      const info = event.properties.info
+      const msgInfo = event.properties.info
 
       if (typeof logger !== "undefined" && logger) {
         logger.debug("Processing message event info", {
           sessionID,
-          infoType: typeof info,
-          infoKeys: Object.keys(info ?? {}),
-          agentField: (info as { agent?: string })?.agent,
-          modelField: (info as { model?: string })?.model,
-          roleField: (info as { role?: string })?.role,
-          fullInfo: JSON.stringify(info),
+          infoType: typeof msgInfo,
+          infoKeys: Object.keys(msgInfo ?? {}),
+          agentField: (msgInfo as { agent?: string })?.agent,
+          modelField: (msgInfo as { model?: string })?.model,
+          roleField: (msgInfo as { role?: string })?.role,
+          fullInfo: JSON.stringify(msgInfo),
         })
       }
 
       // The agent/model might be in the info object or in the event properties
-      const messageAgent = (info as { agent?: string }).agent
-      const messageModel = (info as { model?: string | ModelSpec }).model
+      const messageAgent = (msgInfo as { agent?: string }).agent
+      const messageModel = (msgInfo as { model?: string | ModelSpec }).model
 
       if (messageAgent || messageModel) {
         if (typeof logger !== "undefined" && logger) {
@@ -757,6 +834,7 @@ export function createTaskContinuation(
     recoveringSessions.delete(sessionID)
     errorCooldowns.delete(sessionID)
     sessionAgentModel.delete(sessionID)
+    lastProcessedMessageID.delete(sessionID)
 
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
@@ -826,6 +904,7 @@ export function createTaskContinuation(
     recoveringSessions.clear()
     errorCooldowns.clear()
     sessionAgentModel.clear()
+    lastProcessedMessageID.clear()
 
     // Cleanup logger - flush any pending logs and close file
     logger.flush()

@@ -95,6 +95,7 @@ export function createTaskContinuation(ctx, options = {}) {
   const recoveringSessions = new Set()
   const errorCooldowns = new Map()
   const pendingCountdowns = new Map()
+  const lastProcessedMessageID = new Map()
   const sessionAgentModel = new Map()
   async function fetchTodos(sessionID) {
     try {
@@ -410,26 +411,60 @@ export function createTaskContinuation(ctx, options = {}) {
       })
     }
     errorCooldowns.delete(sessionID)
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
+    const info = event?.properties?.info
+    const messageID = info?.id
+    const role = info?.role
+    const summary = info?.summary
+    if (messageID) {
+      const lastProcessed = lastProcessedMessageID.get(sessionID)
+      if (lastProcessed !== messageID) {
+        lastProcessedMessageID.set(sessionID, messageID)
+        if (role === "user" && !summary) {
+          const existingTimeout = pendingCountdowns.get(sessionID)
+          if (existingTimeout) {
+            clearTimeout(existingTimeout)
+            pendingCountdowns.delete(sessionID)
+            if (typeof logger !== "undefined" && logger) {
+              logger.debug("New user message cancelled pending countdown", { sessionID, messageID })
+            }
+          }
+        } else if (role === "user" && summary) {
+          if (typeof logger !== "undefined" && logger) {
+            logger.debug("Message update with summary, NOT cancelling countdown", {
+              sessionID,
+              messageID,
+              hasSummary: !!summary,
+            })
+          }
+        }
+      }
+    } else if (role === "user" && !summary) {
+      const existingTimeout = pendingCountdowns.get(sessionID)
+      if (existingTimeout) {
+        clearTimeout(existingTimeout)
+        pendingCountdowns.delete(sessionID)
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("User message (no ID, no summary) cancelled pending countdown", {
+            sessionID,
+          })
+        }
+      }
     }
     if (event?.properties?.info) {
-      const info = event.properties.info
+      const msgInfo = event.properties.info
       if (typeof logger !== "undefined" && logger) {
         logger.debug("Processing message event info", {
           sessionID,
-          infoType: typeof info,
-          infoKeys: Object.keys(info ?? {}),
-          agentField: info?.agent,
-          modelField: info?.model,
-          roleField: info?.role,
-          fullInfo: JSON.stringify(info),
+          infoType: typeof msgInfo,
+          infoKeys: Object.keys(msgInfo ?? {}),
+          agentField: msgInfo?.agent,
+          modelField: msgInfo?.model,
+          roleField: msgInfo?.role,
+          fullInfo: JSON.stringify(msgInfo),
         })
       }
-      const messageAgent = info.agent
-      const messageModel = info.model
+      const messageAgent = msgInfo.agent
+      const messageModel = msgInfo.model
       if (messageAgent || messageModel) {
         if (typeof logger !== "undefined" && logger) {
           logger.debug("Captured agent/model from message", {
@@ -446,6 +481,7 @@ export function createTaskContinuation(ctx, options = {}) {
     recoveringSessions.delete(sessionID)
     errorCooldowns.delete(sessionID)
     sessionAgentModel.delete(sessionID)
+    lastProcessedMessageID.delete(sessionID)
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
@@ -501,6 +537,7 @@ export function createTaskContinuation(ctx, options = {}) {
     recoveringSessions.clear()
     errorCooldowns.clear()
     sessionAgentModel.clear()
+    lastProcessedMessageID.clear()
     logger.flush()
     logger.cleanup()
   }

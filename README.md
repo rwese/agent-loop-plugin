@@ -433,6 +433,77 @@ ctx.on("event", async (event) => {
 })
 ```
 
+## Debugging & Troubleshooting
+
+### Message Events Cancelling Countdowns
+
+**Problem:** The Task Loop countdown was being cancelled immediately after being scheduled, even when there was no new user input.
+
+**Root Cause:** OpenCode sends multiple `message.updated` events for the same message:
+
+1. When the message is first created
+2. When the message gets updated with a `summary` field
+3. When other metadata changes
+
+The plugin was treating ALL of these as new user messages and cancelling the countdown.
+
+**Solution:** The plugin now uses two mechanisms to distinguish genuine user input from message updates:
+
+1. **Message ID Tracking:** Tracks the last processed message ID per session. Only cancels countdown for genuinely new messages (different ID).
+
+2. **Summary Detection:** Messages with a `summary` field are considered updates to existing messages, not new user input. These do NOT cancel the countdown.
+
+**How it works:**
+
+```typescript
+// Only cancel countdown for NEW user messages:
+// - role === "user" (not assistant/system)
+// - AND no summary field (not a message update)
+// - AND new message ID (not re-processed)
+if (role === "user" && !summary && isNewMessageID) {
+  cancelCountdown()
+}
+```
+
+**Log Output:**
+
+```
+[DEBUG] New user message cancelled pending countdown {"sessionID":"...","messageID":"..."}
+[DEBUG] Message update with summary, NOT cancelling countdown {"sessionID":"...","hasSummary":true}
+```
+
+### Toast Shows But Prompt Not Injected
+
+If you see the toast notification but the continuation prompt never appears:
+
+1. Check if `message.updated` events with `role: "user"` and no `summary` are arriving after the countdown starts
+2. The countdown timer should fire after `countdownSeconds` and log:
+   - `Countdown timer scheduled`
+   - `Countdown timer fired, injecting continuation`
+   - `Continuation prompt injected successfully`
+
+3. If the countdown timer fires but injection fails, check for errors in the log:
+   - `Failed to inject continuation for session ...`
+
+### Debug Logging
+
+Enable debug logging to trace the plugin behavior:
+
+```typescript
+const plugin = createAgentLoopPlugin({
+  debug: true,
+  logFilePath: "./agent-loop-debug.log",
+})
+```
+
+The log includes:
+
+- Event processing
+- Todo checking
+- Countdown scheduling/firing
+- Continuation injection attempts
+- Agent/model resolution
+
 ## Plugin Tools
 
 When using the Agent Loop Plugin as an OpenCode plugin (`.opencode/plugin/index.js`), the following tools are exposed for agent use:
