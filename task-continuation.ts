@@ -702,35 +702,67 @@ export function createTaskContinuation(
   }
 
   const handleSessionError = async (sessionID: string, event?: LoopEvent): Promise<void> => {
-    // Set error cooldown
-    errorCooldowns.set(sessionID, Date.now())
-
-    // Check if this is an interruption (ESC key pressed)
-    const error = event?.properties?.error
-    const isInterruption =
-      error instanceof Error &&
-      (error.message?.includes("aborted") ||
-        error.message?.includes("cancelled") ||
-        error.message?.includes("interrupted") ||
-        error.name === "AbortError" ||
-        error.name === "CancellationError")
-
-    if (isInterruption) {
-      // Set a longer cooldown after interruption to prevent rapid continuations
-      // This prevents the continuation from firing right after user interruption
-      if (typeof logger !== "undefined" && logger) {
-        logger.debug("Session interruption detected, setting extended cooldown", {
-          sessionID,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-
-    // Clear any pending countdown
+    // Clear any pending countdown IMMEDIATELY to prevent race conditions
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
       pendingCountdowns.delete(sessionID)
+    }
+
+    // Set error cooldown
+    errorCooldowns.set(sessionID, Date.now())
+
+    // Check if this is an interruption (ESC key pressed)
+    // Handle both Error instances and object structures like { name: "MessageAbortedError", data: {...} }
+    const error = event?.properties?.error
+    let isInterruption = false
+    let errorMessage = "Unknown error"
+
+    if (error instanceof Error) {
+      // Standard Error instance
+      errorMessage = error.message
+      isInterruption =
+        error.message?.includes("aborted") ||
+        error.message?.includes("cancelled") ||
+        error.message?.includes("interrupted") ||
+        error.name === "AbortError" ||
+        error.name === "CancellationError"
+    } else if (typeof error === "object" && error !== null) {
+      // Object structure like { name: "MessageAbortedError", data: { message: "..." } }
+      const errorObj = error as { name?: string; data?: { message?: string } }
+      errorMessage = errorObj.data?.message || errorObj.name || "Object error"
+      isInterruption = !!(
+        errorObj.name?.includes("Abort") ||
+        errorObj.name?.includes("Cancel") ||
+        errorObj.name?.includes("Interrupt") ||
+        errorObj.data?.message?.includes("aborted") ||
+        errorObj.data?.message?.includes("cancelled") ||
+        errorObj.data?.message?.includes("interrupted")
+      )
+    }
+
+    if (isInterruption) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Session interruption detected", {
+          sessionID,
+          errorName: error instanceof Error ? error.name : (error as { name?: string })?.name,
+          errorMessage,
+        })
+      }
+
+      // Show toast notification to acknowledge the interruption
+      try {
+        await ctx.client.tui.showToast({
+          body: {
+            title: "Session Interrupted",
+            message: "Task continuation paused due to interruption",
+            variant: "warning",
+            duration: 2000,
+          },
+        })
+      } catch {
+        // Ignore toast errors
+      }
     }
   }
 
@@ -768,8 +800,74 @@ export function createTaskContinuation(
     // Clear error cooldown on user message
     errorCooldowns.delete(sessionID)
 
-    // Check if this is an actual new user message (not a re-processed message)
+    // Check if this message contains an error (interruption detection)
     const info = event?.properties?.info
+    const messageError = (info as { error?: unknown })?.error
+    if (messageError) {
+      // Check if this is an interruption error
+      let isInterruption = false
+      let errorName = ""
+      let errorMessage = ""
+
+      if (messageError instanceof Error) {
+        errorName = messageError.name
+        errorMessage = messageError.message
+        isInterruption =
+          messageError.message?.includes("aborted") ||
+          messageError.message?.includes("cancelled") ||
+          messageError.message?.includes("interrupted") ||
+          messageError.name === "AbortError" ||
+          messageError.name === "CancellationError"
+      } else if (typeof messageError === "object" && messageError !== null) {
+        const errorObj = messageError as { name?: string; data?: { message?: string } }
+        errorName = errorObj.name || ""
+        errorMessage = errorObj.data?.message || ""
+        isInterruption = !!(
+          errorObj.name?.includes("Abort") ||
+          errorObj.name?.includes("Cancel") ||
+          errorObj.name?.includes("Interrupt") ||
+          errorObj.data?.message?.includes("aborted") ||
+          errorObj.data?.message?.includes("cancelled") ||
+          errorObj.data?.message?.includes("interrupted")
+        )
+      }
+
+      if (isInterruption) {
+        // Cancel any pending countdown due to interruption
+        const existingTimeout = pendingCountdowns.get(sessionID)
+        if (existingTimeout) {
+          clearTimeout(existingTimeout)
+          pendingCountdowns.delete(sessionID)
+        }
+
+        // Set error cooldown
+        errorCooldowns.set(sessionID, Date.now())
+
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Message interruption detected", {
+            sessionID,
+            errorName,
+            errorMessage,
+          })
+        }
+
+        // Show toast notification
+        try {
+          await ctx.client.tui.showToast({
+            body: {
+              title: "Session Interrupted",
+              message: "Task continuation paused due to interruption",
+              variant: "warning",
+              duration: 2000,
+            },
+          })
+        } catch {
+          // Ignore toast errors
+        }
+      }
+    }
+
+    // Check if this is an actual new user message (not a re-processed message)
     const messageID = (info as { id?: string })?.id
     const role = (info as { role?: string })?.role
     const summary = (info as { summary?: unknown })?.summary
