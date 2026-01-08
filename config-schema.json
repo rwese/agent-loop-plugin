@@ -9,11 +9,6 @@
       "description": "Enable task loop functionality",
       "default": true
     },
-    "iterationLoop": {
-      "type": "boolean",
-      "description": "Enable iteration loop functionality",
-      "default": true
-    },
     "countdownSeconds": {
       "type": "integer",
       "description": "Default countdown seconds before auto-continuation",
@@ -32,14 +27,6 @@
       "minimum": 0,
       "default": 900
     },
-    "agent": {
-      "type": ["string", "null"],
-      "description": "Agent name for continuation prompts"
-    },
-    "model": {
-      "type": ["string", "null"],
-      "description": "Model name for continuation prompts"
-    },
     "debug": {
       "type": "boolean",
       "description": "Enable debug logging",
@@ -53,8 +40,6 @@
     "countdownSeconds": 2,
     "errorCooldownMs": 3000,
     "toastDurationMs": 900,
-    "agent": null,
-    "model": null,
     "debug": true
   }
 }

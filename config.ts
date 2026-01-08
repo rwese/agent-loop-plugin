@@ -22,26 +22,18 @@ const CONFIG_DIR = ".config/opencode"
  * Default plugin configuration
  */
 export interface AgentLoopPluginOptions {
-  /** Enable task loop functionality (default: true) */
   taskLoop?: boolean
-  /** Enable iteration loop functionality (default: true) */
-  iterationLoop?: boolean
   /** Default countdown seconds before auto-continuation (default: 2) */
   countdownSeconds?: number
   /** Cooldown period in ms after errors (default: 3000) */
   errorCooldownMs?: number
   /** Toast notification duration in ms (default: 900) */
   toastDurationMs?: number
-  /** Agent name for continuation prompts */
-  agent?: string
-  /** Model name for continuation prompts */
-  model?: string
   /** Enable debug logging (default: true) */
   debug?: boolean
   /** Path to log file for writing logs */
   logFilePath?: string
   /** Path to custom continuation prompt template file */
-  continuationPromptFile?: string
 }
 
 /**
@@ -49,32 +41,22 @@ export interface AgentLoopPluginOptions {
  */
 interface InternalConfig {
   // All fields are required for internal use
-  taskLoop: boolean
-  iterationLoop: boolean
   countdownSeconds: number
   errorCooldownMs: number
   toastDurationMs: number
-  agent: string | undefined
-  model: string | undefined
   debug: boolean
   logFilePath: string | undefined
-  continuationPromptFile: string | undefined
 }
 
 /**
  * Default configuration values
  */
 const HARDCODED_DEFAULTS: InternalConfig = {
-  taskLoop: true,
-  iterationLoop: true,
   countdownSeconds: 2,
   errorCooldownMs: 3000,
   toastDurationMs: 900,
-  agent: undefined,
-  model: undefined,
   debug: true,
   logFilePath: undefined,
-  continuationPromptFile: undefined,
 }
 
 /**
@@ -116,23 +98,14 @@ function loadConfigFromFile(): AgentLoopPluginOptions | null {
 
     // Return validated config (unknown properties are ignored)
     return {
-      taskLoop: config.taskLoop,
-      iterationLoop: config.iterationLoop,
       countdownSeconds: config.countdownSeconds,
       errorCooldownMs: config.errorCooldownMs,
       toastDurationMs: config.toastDurationMs,
-      agent: config.agent,
-      model: config.model,
       debug: config.debug,
       logFilePath: config.logFilePath,
-      continuationPromptFile: config.continuationPromptFile,
     }
   } catch (error) {
-    if (error instanceof SyntaxError) {
-      console.warn("[agent-loop-plugin] Config file contains invalid JSON")
-    } else {
-      console.warn(`[agent-loop-plugin] Failed to read config file: ${error}`)
-    }
+    console.warn(`[agent-loop-plugin] Failed to read config file: ${error}`)
     return null
   }
 }
