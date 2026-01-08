@@ -28,3 +28,6 @@ Thumbs.db
 
 # npm pack output
 *.tgz
+
+# Build artifacts
+dist/
