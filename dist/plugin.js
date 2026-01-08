@@ -122,6 +122,25 @@ export function createAgentLoopPlugin(options = {}) {
             }
             break
           }
+          case "session.status": {
+            if (config.taskLoop) {
+              const state = sessionState.get(sessionID)
+              if (state?.taskContinuation) {
+                await state.taskContinuation.handler({ event })
+              }
+            }
+            break
+          }
+          case "session.active":
+          case "session.busy": {
+            if (config.taskLoop) {
+              const state = sessionState.get(sessionID)
+              if (state?.taskContinuation) {
+                await state.taskContinuation.handler({ event })
+              }
+            }
+            break
+          }
           case "session.deleted": {
             const state = sessionState.get(sessionID)
             if (state?.taskContinuation) {

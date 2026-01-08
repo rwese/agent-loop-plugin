@@ -390,12 +390,54 @@ export function createTaskContinuation(ctx, options = {}) {
     }
     scheduleContinuation(sessionID)
   }
-  const handleSessionError = async (sessionID) => {
-    errorCooldowns.set(sessionID, Date.now())
+  const handleSessionError = async (sessionID, event) => {
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
       pendingCountdowns.delete(sessionID)
+    }
+    errorCooldowns.set(sessionID, Date.now())
+    const error = event?.properties?.error
+    let isInterruption = false
+    let errorMessage = "Unknown error"
+    if (error instanceof Error) {
+      errorMessage = error.message
+      isInterruption =
+        error.message?.includes("aborted") ||
+        error.message?.includes("cancelled") ||
+        error.message?.includes("interrupted") ||
+        error.name === "AbortError" ||
+        error.name === "CancellationError"
+    } else if (typeof error === "object" && error !== null) {
+      const errorObj = error
+      errorMessage = errorObj.data?.message || errorObj.name || "Object error"
+      isInterruption = !!(
+        errorObj.name?.includes("Abort") ||
+        errorObj.name?.includes("Cancel") ||
+        errorObj.name?.includes("Interrupt") ||
+        errorObj.data?.message?.includes("aborted") ||
+        errorObj.data?.message?.includes("cancelled") ||
+        errorObj.data?.message?.includes("interrupted")
+      )
+    }
+    if (isInterruption) {
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Session interruption detected", {
+          sessionID,
+          errorName: error instanceof Error ? error.name : error?.name,
+          errorMessage,
+        })
+      }
+      try {
+        await ctx.client.tui.showToast({
+          body: {
+            title: "Session Interrupted",
+            message: "Task continuation paused due to interruption",
+            variant: "warning",
+            duration: 2000,
+          },
+        })
+      } catch {}
     }
   }
   const handleUserMessage = async (sessionID, event) => {
@@ -412,6 +454,59 @@ export function createTaskContinuation(ctx, options = {}) {
     }
     errorCooldowns.delete(sessionID)
     const info = event?.properties?.info
+    const messageError = info?.error
+    if (messageError) {
+      let isInterruption = false
+      let errorName = ""
+      let errorMessage = ""
+      if (messageError instanceof Error) {
+        errorName = messageError.name
+        errorMessage = messageError.message
+        isInterruption =
+          messageError.message?.includes("aborted") ||
+          messageError.message?.includes("cancelled") ||
+          messageError.message?.includes("interrupted") ||
+          messageError.name === "AbortError" ||
+          messageError.name === "CancellationError"
+      } else if (typeof messageError === "object" && messageError !== null) {
+        const errorObj = messageError
+        errorName = errorObj.name || ""
+        errorMessage = errorObj.data?.message || ""
+        isInterruption = !!(
+          errorObj.name?.includes("Abort") ||
+          errorObj.name?.includes("Cancel") ||
+          errorObj.name?.includes("Interrupt") ||
+          errorObj.data?.message?.includes("aborted") ||
+          errorObj.data?.message?.includes("cancelled") ||
+          errorObj.data?.message?.includes("interrupted")
+        )
+      }
+      if (isInterruption) {
+        const existingTimeout = pendingCountdowns.get(sessionID)
+        if (existingTimeout) {
+          clearTimeout(existingTimeout)
+          pendingCountdowns.delete(sessionID)
+        }
+        errorCooldowns.set(sessionID, Date.now())
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Message interruption detected", {
+            sessionID,
+            errorName,
+            errorMessage,
+          })
+        }
+        try {
+          await ctx.client.tui.showToast({
+            body: {
+              title: "Session Interrupted",
+              message: "Task continuation paused due to interruption",
+              variant: "warning",
+              duration: 2000,
+            },
+          })
+        } catch {}
+      }
+    }
     const messageID = info?.id
     const role = info?.role
     const summary = info?.summary
@@ -488,6 +583,42 @@ export function createTaskContinuation(ctx, options = {}) {
       pendingCountdowns.delete(sessionID)
     }
   }
+  const handleSessionActive = async (sessionID) => {
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Session became active, cancelled pending countdown", { sessionID })
+      }
+    }
+  }
+  const handleSessionBusy = async (sessionID) => {
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Session became busy, cancelled pending countdown", { sessionID })
+      }
+    }
+  }
+  const handleSessionStatus = async (sessionID, event) => {
+    const status = event?.properties?.status
+    if (status && typeof status === "object" && "type" in status && status.type === "idle") {
+      const lastError = errorCooldowns.get(sessionID) ?? 0
+      const recentError = Date.now() - lastError < 5000
+      if (recentError) {
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Session returned to idle after recent error, skipping continuation", {
+            sessionID,
+            timeSinceError: Date.now() - lastError,
+          })
+        }
+        return
+      }
+    }
+  }
   function extractSessionID(event) {
     const props = event.properties
     if (props?.sessionID && typeof props.sessionID === "string") return props.sessionID
@@ -504,13 +635,22 @@ export function createTaskContinuation(ctx, options = {}) {
         await handleSessionIdle(sessionID)
         break
       case "session.error":
-        await handleSessionError(sessionID)
+        await handleSessionError(sessionID, event)
+        break
+      case "session.status":
+        await handleSessionStatus(sessionID, event)
         break
       case "message.updated":
         await handleUserMessage(sessionID, event)
         break
       case "session.deleted":
         await handleSessionDeleted(sessionID)
+        break
+      case "session.active":
+        await handleSessionActive(sessionID)
+        break
+      case "session.busy":
+        await handleSessionBusy(sessionID)
         break
     }
   }
