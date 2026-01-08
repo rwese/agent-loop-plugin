@@ -701,9 +701,30 @@ export function createTaskContinuation(
     scheduleContinuation(sessionID)
   }
 
-  const handleSessionError = async (sessionID: string): Promise<void> => {
+  const handleSessionError = async (sessionID: string, event?: LoopEvent): Promise<void> => {
     // Set error cooldown
     errorCooldowns.set(sessionID, Date.now())
+
+    // Check if this is an interruption (ESC key pressed)
+    const error = event?.properties?.error
+    const isInterruption =
+      error instanceof Error &&
+      (error.message?.includes("aborted") ||
+        error.message?.includes("cancelled") ||
+        error.message?.includes("interrupted") ||
+        error.name === "AbortError" ||
+        error.name === "CancellationError")
+
+    if (isInterruption) {
+      // Set a longer cooldown after interruption to prevent rapid continuations
+      // This prevents the continuation from firing right after user interruption
+      if (typeof logger !== "undefined" && logger) {
+        logger.debug("Session interruption detected, setting extended cooldown", {
+          sessionID,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
 
     // Clear any pending countdown
     const existingTimeout = pendingCountdowns.get(sessionID)
@@ -876,6 +897,36 @@ export function createTaskContinuation(
     }
   }
 
+  /**
+   * Handle session.status events - session status has changed.
+   * This helps detect interruptions when session goes back to idle.
+   */
+  const handleSessionStatus = async (sessionID: string, event?: LoopEvent): Promise<void> => {
+    const status = event?.properties?.status
+    if (
+      status &&
+      typeof status === "object" &&
+      "type" in status &&
+      (status as { type?: string }).type === "idle"
+    ) {
+      // Session went back to idle - check if this was from an interruption
+      // by looking at the error cooldown state
+      const lastError = errorCooldowns.get(sessionID) ?? 0
+      const recentError = Date.now() - lastError < 5000 // Within last 5 seconds
+
+      if (recentError) {
+        // This idle state is likely from an interruption - skip continuation
+        if (typeof logger !== "undefined" && logger) {
+          logger.debug("Session returned to idle after recent error, skipping continuation", {
+            sessionID,
+            timeSinceError: Date.now() - lastError,
+          })
+        }
+        return
+      }
+    }
+  }
+
   function extractSessionID(event: LoopEvent): string | undefined {
     const props = event.properties
     if (props?.sessionID && typeof props.sessionID === "string") return props.sessionID
@@ -894,7 +945,10 @@ export function createTaskContinuation(
         await handleSessionIdle(sessionID)
         break
       case "session.error":
-        await handleSessionError(sessionID)
+        await handleSessionError(sessionID, event)
+        break
+      case "session.status":
+        await handleSessionStatus(sessionID, event)
         break
       case "message.updated":
         await handleUserMessage(sessionID, event)

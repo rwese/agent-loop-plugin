@@ -227,6 +227,17 @@ export function createAgentLoopPlugin(options: AgentLoopPluginOptions = {}) {
             break
           }
 
+          case "session.status": {
+            // Session status changed - check for idle after interruption
+            if (config.taskLoop) {
+              const state = sessionState.get(sessionID)
+              if (state?.taskContinuation) {
+                await state.taskContinuation.handler({ event })
+              }
+            }
+            break
+          }
+
           case "session.active":
           case "session.busy": {
             // Agent is processing - cancel any pending continuation
