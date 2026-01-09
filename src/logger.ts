@@ -21,7 +21,7 @@ class PluginLogger implements Logger {
     logFilePath?: string;
     source?: string;
   }) {
-    this.logLevel = options.logLevel ?? "info";
+    this.logLevel = options.logLevel ?? "error";
     this.logFilePath = options.logFilePath;
     this.source = options.source ?? "plugin";
   }

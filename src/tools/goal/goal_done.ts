@@ -77,7 +77,6 @@ If the done condition is not yet met, you can:
     // Try to prompt the agent for validation using plugin context
     try {
       if (pluginContext?.client?.session?.prompt) {
-        console.log("🎯 GOAL_DONE: Injecting validation prompt using plugin context");
         await pluginContext.client.session.prompt({
           path: { id: sessionID },
           body: {
@@ -85,12 +84,6 @@ If the done condition is not yet met, you can:
             parts: [{ type: "text", text: validationPrompt, synthetic: true }],
           },
         })
-        console.log("🎯 GOAL_DONE: Validation prompt injected successfully");
-      } else {
-        console.log("🎯 GOAL_DONE: Plugin context not available, cannot inject prompt");
-        console.log("🎯 GOAL_DONE: Has pluginContext:", !!pluginContext);
-        console.log("🎯 GOAL_DONE: Has client:", !!(pluginContext as any)?.client);
-        console.log("🎯 GOAL_DONE: Has session.prompt:", !!(pluginContext as any)?.client?.session?.prompt);
       }
     } catch (error) {
       // Log error but don't fail the goal completion

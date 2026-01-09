@@ -52,10 +52,8 @@ export function createGoalManagement(
 
   async function markGoalComplete(sessionID: string): Promise<Goal | null> {
     const goal = await readGoalForSession(sessionID);
-    console.log("🎯 GOAL MGMT: markGoalComplete called for session:", sessionID, "goal found:", !!goal);
 
     if (!goal) {
-      console.log("🎯 GOAL MGMT: No goal found for session:", sessionID);
       return null;
     }
 
@@ -66,11 +64,9 @@ export function createGoalManagement(
     };
 
     await writeGoalForSession(sessionID, completedGoal);
-    console.log("🎯 GOAL MGMT: Goal completed for session:", sessionID, "title:", goal.title);
     
     // Mark this session as pending validation
     pendingValidation.add(sessionID);
-    console.log("🎯 GOAL MGMT: Added session to pending validation, total:", pendingValidation.size);
     
     return completedGoal;
   }

@@ -17,9 +17,7 @@ import { goal_validate } from "./goal_validate.js";
  */
 export function createGoalTools(ctx: PluginInput) {
   // Set the plugin context for goal tools that need access to client
-  console.log("🎯 GOAL TOOLS: Setting plugin context");
   setGoalDoneContext(ctx as any);
-  console.log("🎯 GOAL TOOLS: Plugin context set, has client:", !!(ctx as any)?.client);
   
   return {
     /**

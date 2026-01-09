@@ -89,7 +89,6 @@ export function createLogger(config: LoggerConfig = {}): Logger {
     } catch (error) {
       // Fallback to console if file write fails
       console.error("Failed to write to log file:", error)
-      console.log(`[${entry.level}] ${entry.message}`)
     }
   }
 
@@ -128,12 +127,12 @@ export function createLogger(config: LoggerConfig = {}): Logger {
 
     // Always log warnings and errors to console
     if (level === "WARN" || level === "ERROR") {
-      console.warn(`[${level}] [${source}] ${message}`, data ?? "")
+      // console.warn(`[${level}] [${source}] ${message}`, data ?? "")
     }
 
     // Log info and debug to console if debug is enabled
     if ((level === "INFO" || level === "DEBUG") && debug) {
-      console.log(`[${level}] [${source}] ${message}`, data ?? "")
+      // console.log removed - debug output disabled
     }
   }
 
@@ -188,14 +187,14 @@ export function createNoopLogger(): Logger {
  */
 export function createConsoleLogger(source: string = "agent-loop-plugin", debug: boolean = false): Logger {
   return {
-    debug: (message: string, data?: Record<string, unknown>) => {
+    debug: (_message: string, _data?: Record<string, unknown>) => {
       if (debug) {
-        console.log(`[DEBUG] [${source}] ${message}`, data ?? "")
+        // console.log removed - debug output disabled
       }
     },
 
-    info: (message: string, data?: Record<string, unknown>) => {
-      console.log(`[INFO] [${source}] ${message}`, data ?? "")
+    info: (_message: string, _data?: Record<string, unknown>) => {
+      // console.log removed - info output disabled
     },
 
     warn: (message: string, data?: Record<string, unknown>) => {

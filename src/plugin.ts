@@ -45,15 +45,6 @@ export const agentLoopPlugin: Plugin = async (
   // Create goal context injection handler
   const goalContext = createGoalContextInjection(ctx);
 
-  // Log client structure for debugging
-  console.log("🎯 PLUGIN: Client structure:", {
-    hasClient: !!ctx.client,
-    clientKeys: ctx.client ? Object.keys(ctx.client) : [],
-    hasSession: !!ctx.client?.session,
-    sessionKeys: ctx.client?.session ? Object.keys(ctx.client.session) : [],
-    hasSessionPrompt: !!ctx.client?.session?.prompt,
-  });
-
   log.info("Agent loop plugin initialized successfully");
 
   return {
@@ -71,8 +62,6 @@ export const agentLoopPlugin: Plugin = async (
       messageID?: string;
       variant?: string;
     }) => {
-      console.log("🎯 PLUGIN: Chat message received for session:", input.sessionID);
-      
       // Handle goal context injection for chat messages
       await goalContext.handleChatMessage({
         sessionID: input.sessionID,
@@ -82,10 +71,8 @@ export const agentLoopPlugin: Plugin = async (
 
       // Check if this session has a goal pending validation
       const hasPendingValidation = await goalManagement.checkPendingValidation(input.sessionID);
-      console.log("🎯 PLUGIN: Pending validation check for session", input.sessionID, ":", hasPendingValidation);
       
       if (hasPendingValidation) {
-        console.log("🎯 PLUGIN: Injecting validation prompt for pending goal in session:", input.sessionID);
         // Inject validation prompt
         await injectValidationPrompt(ctx, input.sessionID);
         // Clear the pending validation flag
@@ -107,26 +94,20 @@ export const agentLoopPlugin: Plugin = async (
       }
     },
     event: async ({ event }) => {
-      console.log("🎯 PLUGIN: Event received:", event?.type);
-      
       if (!event) {
         return;
       }
 
       // Handle session compaction for goal context re-injection
       if (event.type === "session.compacted") {
-        console.log("🎯 PLUGIN: Session compacted event detected");
         await goalContext.handleSessionCompacted(event as { properties?: { sessionID?: string } });
       }
 
       // Handle goal_done command to inject validation prompt
       const eventData = event as { type: string; properties?: { info?: { command?: string; sessionID?: string } } };
       if (eventData.type === "command" && eventData.properties?.info?.command === "goal_done" && eventData.properties.info.sessionID) {
-        console.log("🎯 PLUGIN: Detected goal_done command for session:", eventData.properties.info.sessionID);
         // Inject validation prompt after goal is marked as completed
         await injectValidationPrompt(ctx, eventData.properties.info.sessionID);
-      } else if (eventData.type === "command") {
-        console.log("🎯 PLUGIN: Command event detected:", eventData.type, "command:", eventData.properties?.info?.command);
       }
 
       // Handle session deletion cleanup

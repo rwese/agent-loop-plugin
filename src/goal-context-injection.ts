@@ -22,25 +22,7 @@ The agent has an active goal for this session. Use the goal tools to manage it:
 **Remember:** Work toward completing the goal's done condition.
 `;
 
-const VALIDATION_GUIDANCE = `
-## Goal Validation Required
-
-This goal has been marked as completed. Please review and validate it.
-
-**Review Checklist:**
-- ✅ Verify the done condition is satisfied
-- ✅ Confirm the work meets requirements  
-- ✅ Ensure the goal is truly complete
-
-**To Validate:**
-Call: \`goal_validate()\`
-
-If not yet complete, you can:
-- Set a new goal with \`goal_set()\`
-- Continue working on this goal
-`;
-
-/**
+ /**
  * Check if goal context was already injected in a session
  */
 async function hasGoalContext(

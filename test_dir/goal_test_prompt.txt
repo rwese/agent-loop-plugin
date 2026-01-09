@@ -1,0 +1,12 @@
+create a goal to setup a wishlist of gifts
+acceptance criteria: 5-10 well defined gifts
+
+What are your main interests or hobbies for potential gift ideas?
+books, which are evergreens would be nice
+
+What's your preferred price range for gifts?
+Budget-friendly ($0-25)
+What types of gifts do you prefer?
+Physical items
+
+no more questions
