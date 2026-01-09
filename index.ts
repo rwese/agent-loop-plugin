@@ -46,7 +46,11 @@ import type {
   TaskContinuationOptions,
   TaskContinuation,
   PluginContext,
+  Goal,
+  GoalManagementOptions,
+  GoalManagement,
 } from "./types.js"
+import { GOALS_BASE_PATH, GOAL_FILENAME } from "./types.js"
 
 // ===========================================================================
 // Utilities
@@ -141,6 +145,7 @@ export function createTaskContinuation(
     agent,
     model,
     logFilePath,
+    goalManagement,
   } = options
 
   // Create logger - logs to file when path provided
@@ -346,12 +351,50 @@ export function createTaskContinuation(
       incompleteCount,
     })
 
-    if (incompleteCount === 0) {
-      logger.debug("No incomplete tasks, skipping continuation", { sessionID })
+    // Check for active goals if goal management is available
+    let activeGoal: Goal | null = null
+    let hasActiveGoal = false
+    if (goalManagement) {
+      activeGoal = await goalManagement.getGoal(sessionID)
+      hasActiveGoal = activeGoal !== null && activeGoal.status === "active"
+      
+      logger.debug("Checking goals for continuation", {
+        sessionID,
+        hasGoal: activeGoal !== null,
+        goalStatus: activeGoal?.status,
+        goalTitle: activeGoal?.title,
+      })
+    }
+
+    // Continue if there are incomplete todos OR active goals
+    if (incompleteCount === 0 && !hasActiveGoal) {
+      logger.debug("No incomplete tasks or active goals, skipping continuation", { sessionID })
       return
     }
 
-    const prompt = buildContinuationPrompt(todos)
+    // Build combined continuation prompt
+    let prompt = ""
+
+    if (incompleteCount > 0) {
+      prompt += buildContinuationPrompt(todos)
+    }
+
+    if (hasActiveGoal && activeGoal) {
+      if (prompt.length > 0) {
+        prompt += "\n\n"
+      }
+      prompt += `[SYSTEM - GOAL CONTINUATION]
+
+CURRENT GOAL: ${activeGoal.title}
+${activeGoal.description ? `DESCRIPTION: ${activeGoal.description}\n` : ""}
+DONE CONDITION: ${activeGoal.done_condition}
+
+INSTRUCTIONS:
+
+1. Focus on completing the active goal above
+2. Use goal_done when the goal's done condition is met
+3. Work independently - you can solve everything without asking for permission.`
+    }
 
     // Poll to get the latest agent/model with priority
     // This handles timing issues where message events may not have been processed yet
@@ -479,7 +522,23 @@ export function createTaskContinuation(
       totalTodos: todos.length,
       incompleteCount,
     })
-    if (incompleteCount === 0) {
+
+    // Check for active goals if goal management is available
+    let hasActiveGoal = false
+    if (goalManagement) {
+      const goal = await goalManagement.getGoal(sessionID)
+      hasActiveGoal = goal !== null && goal.status === "active"
+      
+      logger.debug("Session idle - checking goals", {
+        sessionID,
+        hasGoal: goal !== null,
+        goalStatus: goal?.status,
+        goalTitle: goal?.title,
+      })
+    }
+
+    // Continue if there are incomplete todos OR active goals
+    if (incompleteCount === 0 && !hasActiveGoal) {
       return
     }
 
@@ -827,3 +886,193 @@ export function createTaskContinuation(
     cleanup,
   }
 }
+
+// ============================================================================
+// Goal Management
+// ============================================================================
+
+/**
+ * Expand tilde path to home directory
+ */
+function expandHomeDir(path: string): string {
+  if (path.startsWith("~")) {
+    return path.replace("~", process.env.HOME ?? process.env.USERPROFILE ?? "~")
+  }
+  return path
+}
+
+/**
+ * Get the goal file path for a session
+ */
+function getGoalFilePath(sessionID: string, basePath: string): string {
+  const expandedBase = expandHomeDir(basePath)
+  return `${expandedBase}/${sessionID}/${GOAL_FILENAME}`
+}
+
+/**
+ * Create a new goal management instance
+ */
+export function createGoalManagement(
+  options: GoalManagementOptions = {}
+): GoalManagement {
+  const { goalsBasePath = GOALS_BASE_PATH } = options
+
+  // Import fs module for file operations
+  const fs = import("node:fs/promises")
+  const pathModule = import("node:path")
+
+  async function readGoal(sessionID: string): Promise<Goal | null> {
+    try {
+      const goalPath = getGoalFilePath(sessionID, goalsBasePath)
+      const fsModule = await fs
+      const content = await fsModule.readFile(goalPath, "utf-8")
+      const goal = JSON.parse(content) as Goal
+
+      // Validate basic structure
+      if (!goal.title || !goal.done_condition || !goal.created_at) {
+        return null
+      }
+
+      // Validate status
+      if (!["active", "completed"].includes(goal.status)) {
+        return null
+      }
+
+      return goal
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        // File doesn't exist - no goal set
+        return null
+      }
+      // Log other errors but return null
+      console.error(`Error reading goal for session ${sessionID}:`, error)
+      return null
+    }
+  }
+
+  async function writeGoal(sessionID: string, goal: Goal): Promise<void> {
+    try {
+      const goalPath = getGoalFilePath(sessionID, goalsBasePath)
+      const fsModule = await fs
+      const pathMod = await pathModule
+
+      // Ensure directory exists
+      const dirPath = pathMod.dirname(goalPath)
+      await fsModule.mkdir(dirPath, { recursive: true })
+
+      // Write goal file
+      await fsModule.writeFile(goalPath, JSON.stringify(goal, null, 2), "utf-8")
+    } catch (error) {
+      console.error(`Error writing goal for session ${sessionID}:`, error)
+      throw error
+    }
+  }
+
+  async function createGoal(
+    sessionID: string,
+    title: string,
+    doneCondition: string,
+    description?: string
+  ): Promise<Goal> {
+    const goal: Goal = {
+      title,
+      description,
+      done_condition: doneCondition,
+      status: "active",
+      created_at: new Date().toISOString(),
+      completed_at: null,
+    }
+
+    await writeGoal(sessionID, goal)
+    return goal
+  }
+
+  async function completeGoal(sessionID: string): Promise<Goal | null> {
+    const goal = await readGoal(sessionID)
+
+    if (!goal) {
+      return null
+    }
+
+    const completedGoal: Goal = {
+      ...goal,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    }
+
+    await writeGoal(sessionID, completedGoal)
+    return completedGoal
+  }
+
+  async function hasActiveGoal(sessionID: string): Promise<boolean> {
+    const goal = await readGoal(sessionID)
+    return goal !== null && goal.status === "active"
+  }
+
+  /**
+   * Handle goal-related events from OpenCode
+   */
+  async function handleGoalEvent(sessionID: string, event?: LoopEvent): Promise<void> {
+    const info = event?.properties?.info
+
+    // Handle goal.set command
+    if (event?.type === "command" && info) {
+      const commandInfo = info as { command?: string; args?: Record<string, unknown> }
+
+      if (commandInfo.command === "goal_set") {
+        const args = commandInfo.args ?? {}
+        const title = args.title as string
+        const doneCondition = args.done_condition as string
+        const description = args.description as string | undefined
+
+        if (!title || !doneCondition) {
+          console.error("goal_set command requires title and done_condition")
+          return
+        }
+
+        await createGoal(sessionID, title, doneCondition, description)
+        console.log(`Goal created for session ${sessionID}: ${title}`)
+      }
+
+      // Handle goal.done command
+      if (commandInfo.command === "goal_done") {
+        const completedGoal = await completeGoal(sessionID)
+        if (completedGoal) {
+          console.log(`Goal completed for session ${sessionID}: ${completedGoal.title}`)
+        }
+      }
+    }
+  }
+
+  const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
+    const props = event.properties
+    const sessionID = props?.sessionID as string | undefined
+
+    if (!sessionID) {
+      // Try to extract from info
+      const info = props?.info as { sessionID?: string } | undefined
+      if (info?.sessionID) {
+        await handleGoalEvent(info.sessionID, event)
+      }
+      return
+    }
+
+    await handleGoalEvent(sessionID, event)
+  }
+
+  const cleanup = async (): Promise<void> => {
+    // Cleanup is handled by file system, no in-memory state to clean
+  }
+
+  return {
+    readGoal,
+    writeGoal,
+    createGoal,
+    completeGoal,
+    getGoal: readGoal,
+    hasActiveGoal,
+    handler,
+    cleanup,
+  }
+}
+

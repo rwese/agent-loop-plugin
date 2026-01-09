@@ -176,6 +176,8 @@ export interface TaskLoopOptions {
   helpAgent?: string
   /** Callback invoked when countdown starts (allows plugin-controlled timing) */
   onCountdownStart?: (info: CountdownCallbackInfo) => void
+  /** Goal management instance for goal-aware continuation */
+  goalManagement?: GoalManagement
 }
 
 /** Configuration options for task continuation plugin (compatibility alias) */
@@ -192,6 +194,8 @@ export interface TaskContinuationOptions {
   model?: string
   /** Path to log file for debugging */
   logFilePath?: string
+  /** Goal management instance for goal-aware continuation */
+  goalManagement?: GoalManagement
 }
 
 /** Public interface returned by createTaskContinuation */
@@ -217,4 +221,64 @@ export interface PromptCall {
       text: string
     }>
   }
+}
+
+// ============================================================================
+// Goal Management Types
+// ============================================================================
+
+/**
+ * Represents a goal for the agent loop session.
+ * Only one goal exists per session - new goal_set overwrites existing.
+ */
+export interface Goal {
+  /** Title of the goal */
+  title: string
+  /** Optional detailed description of the goal */
+  description?: string
+  /** String description of what constitutes goal completion */
+  done_condition: string
+  /** Current status of the goal */
+  status: "active" | "completed"
+  /** ISO timestamp when the goal was created */
+  created_at: string
+  /** ISO timestamp when the goal was completed, null if not completed */
+  completed_at: string | null
+}
+
+/** Path to the goals storage directory */
+export const GOALS_BASE_PATH = "~/.local/share/opencode/plugin/agent-loop"
+
+/** Filename for the goal JSON file */
+export const GOAL_FILENAME = "goal.json"
+
+/** Configuration options for goal management plugin */
+export interface GoalManagementOptions {
+  /** Custom base path for goal storage (defaults to standard OpenCode path) */
+  goalsBasePath?: string
+}
+
+/** Public interface returned by createGoalManagement */
+export interface GoalManagement {
+  /** Read the current goal for a session (returns null if no goal exists) */
+  readGoal: (sessionID: string) => Promise<Goal | null>
+  /** Write a goal to storage (overwrites existing goal) */
+  writeGoal: (sessionID: string, goal: Goal) => Promise<void>
+  /** Create a new active goal (shorthand for writeGoal) */
+  createGoal: (
+    sessionID: string,
+    title: string,
+    doneCondition: string,
+    description?: string
+  ) => Promise<Goal>
+  /** Mark a goal as completed */
+  completeGoal: (sessionID: string) => Promise<Goal | null>
+  /** Get the current goal (alias for readGoal) */
+  getGoal: (sessionID: string) => Promise<Goal | null>
+  /** Check if a session has an active (non-completed) goal */
+  hasActiveGoal: (sessionID: string) => Promise<boolean>
+  /** Event handler for session events */
+  handler: (input: { event: LoopEvent }) => Promise<void>
+  /** Cleanup session state */
+  cleanup: () => Promise<void>
 }

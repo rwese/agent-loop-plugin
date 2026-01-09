@@ -18,7 +18,6 @@ export default defineConfig({
         "**/dist/**",
         "**/*.config.ts",
         "**/example.ts",
-        "**/index.ts",
       ],
     },
   },
