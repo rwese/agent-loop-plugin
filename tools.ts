@@ -161,9 +161,9 @@ If the done condition is not yet met, you can:
           await client.session.prompt({
             path: { id: sessionID },
             body: {
-              parts: [{ type: "text", text: validationPrompt }],
+              noReply: true,
+              parts: [{ type: "text", text: validationPrompt, synthetic: true }],
             },
-            query: { directory: ctx.directory || "" },
           })
         }
       } catch {
