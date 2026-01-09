@@ -53,6 +53,7 @@ export const agentLoopPlugin: Plugin = async (
       goal_status: goalTools.goal_status,
       goal_done: goalTools.goal_done,
       goal_cancel: goalTools.goal_cancel,
+      goal_validate: goalTools.goal_validate,
     },
     "chat.message": async (input: {
       sessionID: string;

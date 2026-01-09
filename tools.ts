@@ -85,10 +85,20 @@ The agent will work toward this goal. Use goal_done when the condition is met.`
         return "📋 No active goal for this session."
       }
 
-      const statusText = goal.status === "active" ? "🟡 In Progress" : "✅ Completed"
-      const completedText = goal.completed_at
-        ? `\n**Completed:** ${new Date(goal.completed_at).toLocaleString()}`
-        : ""
+      let statusText = "🟡 In Progress"
+      if (goal.status === "completed") {
+        statusText = "✅ Completed"
+      } else if (goal.status === "validated") {
+        statusText = "✓ Validated"
+      }
+
+      let completedText = ""
+      if (goal.completed_at) {
+        completedText = `\n**Completed:** ${new Date(goal.completed_at).toLocaleString()}`
+      }
+      if (goal.validated_at) {
+        completedText += `\n**Validated:** ${new Date(goal.validated_at).toLocaleString()}`
+      }
 
       return `🎯 **Current Goal:** ${goal.title}
 ${goal.description ? `**Description:** ${goal.description}` : ""}
@@ -117,8 +127,23 @@ ${goal.description ? `**Description:** ${goal.description}` : ""}
 
 **Title:** ${completedGoal.title}
 **Completed At:** ${new Date(completedGoal.completed_at!).toLocaleString()}
+${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
+**Done Condition:** ${completedGoal.done_condition}
 
-The goal has been marked as complete.`
+## Goal Validation Required
+
+The goal has been marked as completed, but requires validation to confirm the done condition has been met.
+
+**Please review:**
+- Have you verified the done condition is satisfied?
+- Does the work meet the requirements?
+- Is the goal truly complete?
+
+**To validate this goal**, call: goal_validate()
+
+If the done condition is not yet met, you can:
+- Set a new goal with goal_set()
+- Continue working on the current goal`
     },
 
     /**
@@ -150,6 +175,52 @@ The goal has been marked as complete.`
 
 **Title:** ${goal.title}${reasonText}
 ${statusText}`
+    },
+
+    /**
+     * goal_validate - Validate a completed goal
+     *
+     * Usage: Call this tool to validate a completed goal after reviewing the done condition.
+     * Only works if the goal is in "completed" status.
+     */
+    goal_validate: async (): Promise<string> => {
+      const sessionID = await getCurrentSessionID()
+      const gm = await getGoalManagement()
+
+      const goal = await gm.getGoal(sessionID)
+
+      if (!goal) {
+        return "⚠️ No goal exists for this session to validate."
+      }
+
+      if (goal.status === "active") {
+        return "⚠️ The goal is still active. Use goal_done to mark it as completed first."
+      }
+
+      if (goal.status === "validated") {
+        return "⚠️ The goal has already been validated."
+      }
+
+      if (goal.status !== "completed") {
+        return "⚠️ Goal must be completed before it can be validated."
+      }
+
+      const validatedGoal = await gm.validateGoal(sessionID)
+
+      if (!validatedGoal) {
+        return "⚠️ Failed to validate goal. Please try again."
+      }
+
+      return `✅ Goal validated!
+
+**Title:** ${validatedGoal.title}
+**Status:** Validated
+**Completed:** ${new Date(validatedGoal.completed_at!).toLocaleString()}
+**Validated:** ${new Date(validatedGoal.validated_at!).toLocaleString()}
+${validatedGoal.description ? `**Description:** ${validatedGoal.description}` : ""}
+**Done Condition:** ${validatedGoal.done_condition}
+
+The goal has been successfully validated and is now complete.`
     },
   }
 }
@@ -216,6 +287,18 @@ export function createToolDefinitions(ctx: PluginInput): Record<string, object> 
       },
       async execute(args: unknown, _context: unknown) {
         return tools.goal_cancel(args as { reason?: string })
+      },
+    },
+
+    goal_validate: {
+      description: "Validate a completed goal after agent review. Use goal_done first, then validate when the done condition is satisfied.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      async execute(_args: unknown, _context: unknown) {
+        return tools.goal_validate()
       },
     },
   }

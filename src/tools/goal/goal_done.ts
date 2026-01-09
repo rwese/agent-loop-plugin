@@ -1,5 +1,5 @@
-import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
-import { createGoalManagement } from "../../goal/management.js";
+import { tool, type ToolContext } from "@opencode-ai/plugin/tool"
+import { createGoalManagement } from "../../goal/management.js"
 
 const DESCRIPTION = `Goal Completion Tool
 
@@ -20,21 +20,21 @@ goal_done()
 - Only works if there's an active goal
 - Use this to formally close out a goal
 - The completed goal can still be viewed via goal_status
-- Consider setting a new goal after completion`;
+- Consider setting a new goal after completion`
 
 export const goal_done = tool({
   description: DESCRIPTION,
   args: {},
   async execute(_args: Record<string, never>, context: ToolContext) {
     // Extract session ID from context
-    const sessionID = (context as { sessionID?: string }).sessionID || "default";
-    
-    const gm = createGoalManagement({} as any, {});
-    
-    const completedGoal = await gm.completeGoal(sessionID);
+    const sessionID = (context as { sessionID?: string }).sessionID || "default"
+
+    const gm = createGoalManagement({} as any, {})
+
+    const completedGoal = await gm.completeGoal(sessionID)
 
     if (!completedGoal) {
-      return "⚠️ No active goal to complete. Use goal_set first.";
+      return "⚠️ No active goal to complete. Use goal_set first."
     }
 
     return `🎉 Goal completed!
@@ -57,6 +57,6 @@ The goal has been marked as completed, but requires validation to confirm the do
 
 If the done condition is not yet met, you can:
 - Set a new goal with goal_set()
-- Continue working on the current goal`;
+- Continue working on the current goal`
   },
-});
+})
