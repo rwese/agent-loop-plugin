@@ -75,7 +75,7 @@ If the done condition is not yet met, you can:
         await client.session.prompt({
           path: { id: sessionID },
           body: {
-            noReply: true,
+            agent: (context as { agent?: string }).agent,
             parts: [{ type: "text", text: validationPrompt, synthetic: true }],
           },
         })
