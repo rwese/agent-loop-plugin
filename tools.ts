@@ -123,27 +123,54 @@ ${goal.description ? `**Description:** ${goal.description}` : ""}
         return "⚠️ No active goal to complete. Use goal_set first."
       }
 
-      return `🎉 Goal completed!
+      // Return completion message first
+      const completionMessage = `🎉 Goal completed!
 
 **Title:** ${completedGoal.title}
 **Completed At:** ${new Date(completedGoal.completed_at!).toLocaleString()}
 ${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
+**Done Condition:** ${completedGoal.done_condition}`
+
+      // Create validation prompt for the agent
+      const validationPrompt = `## Goal Validation Required
+
+The goal "${completedGoal.title}" has been marked as completed.
+
+**Please review the goal and verify the done condition:**
+
 **Done Condition:** ${completedGoal.done_condition}
+${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
 
-## Goal Validation Required
+**Review Checklist:**
+- ✅ Verify the done condition is satisfied
+- ✅ Confirm the work meets the requirements
+- ✅ Ensure the goal is truly complete
 
-The goal has been marked as completed, but requires validation to confirm the done condition has been met.
-
-**Please review:**
-- Have you verified the done condition is satisfied?
-- Does the work meet the requirements?
-- Is the goal truly complete?
-
-**To validate this goal**, call: goal_validate()
+**Your next step:**
+If the done condition is satisfied, please validate this goal by calling: \`goal_validate()\`
 
 If the done condition is not yet met, you can:
-- Set a new goal with goal_set()
+- Set a new goal with \`goal_set()\`
 - Continue working on the current goal`
+
+      // Try to prompt the agent for validation
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const client = (ctx as any).client
+        if (client?.session?.prompt) {
+          await client.session.prompt({
+            path: { id: sessionID },
+            body: {
+              parts: [{ type: "text", text: validationPrompt }],
+            },
+            query: { directory: ctx.directory || "" },
+          })
+        }
+      } catch {
+        // Silently fail if we can't prompt - the completion message will still be returned
+      }
+
+      return completionMessage
     },
 
     /**
