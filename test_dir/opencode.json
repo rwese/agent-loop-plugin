@@ -1,0 +1,5 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["../dist/index.js"],
+  "permission": { "*": "deny", "goal_*": "allow"}
+}

@@ -13,6 +13,10 @@
     "./plugin": {
       "types": "./dist/plugin.d.ts",
       "import": "./dist/plugin.js"
+    },
+    "./src": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
     }
   },
   "engines": {
@@ -69,10 +73,10 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
-  "opencode": {
+"opencode": {
     "name": "agent-loop-plugin",
     "version": "4.1.0",
-    "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
+    "description": "Task Continuation & Goal Management Plugin - Automatically continues sessions and provides structured goal tracking using modern OpenCode tool patterns",
     "author": "OpenCode Community",
     "license": "MIT",
     "repository": "https://github.com/rwese/agent-loop-plugin",
@@ -83,5 +87,7 @@
     "type": "github",
     "url": "https://github.com/sponsors/rwese"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.1.8"
+  }
 }

@@ -1,13 +1,13 @@
 # Task Continuation & Goal Management Plugin
 
-Minimal task continuation and goal management plugin for OpenCode - automatically continues sessions when incomplete tasks remain and provides structured goal tracking for AI agents.
+Minimal task continuation and goal management plugin for OpenCode - automatically continues sessions when incomplete tasks remain and provides structured goal tracking for AI agents using the modern tool pattern.
 
 ## Overview
 
 This plugin provides two complementary systems:
 
 1. **Task Continuation**: Automatically continues sessions when incomplete todos remain
-2. **Goal Management**: Structured goal tracking with persistence across sessions
+2. **Goal Management**: Structured goal tracking with persistence across sessions using the modern OpenCode tool pattern
 
 **Perfect for:**
 
@@ -17,9 +17,169 @@ This plugin provides two complementary systems:
 - Preventing premature session termination
 - Ensuring all tasks in a todo list are completed
 
-## Goal Management Features
+## New Plugin Architecture
 
-The plugin includes a comprehensive goal management system designed for AI agent workflows. Goals provide a higher-level abstraction than todos, representing overarching objectives that guide agent behavior across multiple interactions and sessions.
+This plugin follows the modern OpenCode plugin architecture with a clean separation of concerns:
+
+```
+src/
+├── plugin.ts              # Main plugin entry point
+├── types.ts               # TypeScript type definitions
+├── logger.ts              # Logging utilities
+├── goal/                  # Core goal management implementation
+│   ├── management.ts      # Goal CRUD operations
+│   ├── continuation.ts    # Task continuation logic
+│   └── storage.ts         # File-based storage
+└── tools/goal/            # OpenCode tool definitions (NEW!)
+    ├── index.ts           # Tool factory function
+    ├── goal_set.ts        # goal_set tool
+    ├── goal_status.ts     # goal_status tool
+    ├── goal_done.ts       # goal_done tool
+    └── goal_cancel.ts     # goal_cancel tool
+```
+
+### Key Architecture Changes
+
+- **Tool Pattern**: Uses `@opencode-ai/plugin` `tool()` decorator for LLM-accessible tools
+- **Separation of Concerns**: Core logic (`goal/`) separated from tool definitions (`tools/goal/`)
+- **Type Safety**: Full TypeScript support with comprehensive interfaces
+- **Event-Driven**: Uses OpenCode event system for session management
+
+## Installation
+
+```bash
+npm install @frugally3683/agent-loop-plugin
+```
+
+## Quick Start
+
+### Basic Plugin Usage
+
+```typescript
+import agentLoopPlugin from "@frugally3683/agent-loop-plugin"
+
+export default agentLoopPlugin
+```
+
+### Advanced Usage with Custom Configuration
+
+```typescript
+import { agentLoopPlugin } from "@frugally3683/agent-loop-plugin"
+
+export default {
+  plugins: [agentLoopPlugin],
+  // Custom configuration if needed
+}
+```
+
+## Tool Reference
+
+The plugin exposes four powerful tools that AI agents can use during conversations to manage goals effectively.
+
+### goal_set
+
+**Purpose**: Set a new goal for the current session to keep the agent focused on primary objectives.
+
+**Usage**:
+
+```typescript
+goal_set({
+  title: "Implement user authentication",
+  done_condition: "Users can sign up, log in, and log out securely",
+  description: "Create a complete auth system with JWT tokens",
+})
+```
+
+**Parameters**:
+
+- `title` (string, required): Short, clear title for the goal
+- `done_condition` (string, required): Description of what constitutes goal completion
+- `description` (string, optional): Detailed explanation of the goal
+
+**Example Response**:
+
+```
+✅ Goal set successfully!
+
+**Title:** Implement user authentication
+**Done Condition:** Users can sign up, log in, and log out securely
+**Description:** Create a complete auth system with JWT tokens
+
+The agent will work toward this goal. Use goal_done when the condition is met.
+```
+
+### goal_status
+
+**Purpose**: Check the current goal status to understand what the agent should be working on.
+
+**Usage**:
+
+```typescript
+goal_status()
+```
+
+**Parameters**: None required
+
+**Example Response**:
+
+```
+🎯 **Current Goal:** Implement user authentication
+**Description:** Create a complete auth system with JWT tokens
+**Status:** 🟡 In Progress
+**Done Condition:** Users can sign up, log in, and log out securely
+**Created:** 1/15/2024, 10:30 AM
+```
+
+### goal_done
+
+**Purpose**: Mark the current goal as successfully completed when the done condition is met.
+
+**Usage**:
+
+```typescript
+goal_done()
+```
+
+**Parameters**: None required
+
+**Example Response**:
+
+```
+🎉 Goal completed!
+
+**Title:** Implement user authentication
+**Completed At:** 1/15/2024, 2:45 PM
+
+The goal has been marked as complete.
+```
+
+### goal_cancel
+
+**Purpose**: Cancel or abandon the current goal without completing it when goals are no longer relevant.
+
+**Usage**:
+
+```typescript
+goal_cancel({
+  reason: "Requirements changed, need to reassess approach",
+})
+```
+
+**Parameters**:
+
+- `reason` (string, optional): Explanation for why the goal is being cancelled
+
+**Example Response**:
+
+```
+🚫 Goal cancelled.
+
+**Title:** Implement user authentication
+**Reason:** Requirements changed, need to reassess approach
+The goal has been removed.
+```
+
+## Goal Management API
 
 ### Goal Concepts
 
@@ -61,86 +221,28 @@ Goals are stored in the following location:
 
 Each session can have **one active goal** at a time. Setting a new goal overwrites the existing one, ensuring agents always have a clear, current objective.
 
-## Installation
+## Advanced Usage
 
-```bash
-npm install @frugally3683/agent-loop-plugin
-```
+### Direct Goal Management API
 
-## Usage
-
-### Basic Usage
-
-```typescript
-import agentLoopPlugin from "@frugally3683/agent-loop-plugin"
-
-export default agentLoopPlugin
-```
-
-### Goal Management Only
+For more control, you can use the goal management API directly:
 
 ```typescript
 import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
 
 export default function myPlugin() {
-  const goalManagement = createGoalManagement({})
+  // Create goal management with custom options
+  const goalManagement = createGoalManagement({
+    goalsBasePath: "/custom/path/to/goals",
+  })
 
   return { goalManagement }
 }
 ```
 
-### Task Continuation Only
+### Goal Management Functions
 
-```typescript
-import { createTaskContinuation } from "@frugally3683/agent-loop-plugin"
-
-export default function myPlugin(ctx: PluginContext) {
-  const taskContinuation = createTaskContinuation(ctx, {})
-
-  ctx.on("event", taskContinuation.handler)
-
-  return { taskContinuation }
-}
-```
-
-### Combined Usage
-
-```typescript
-import agentLoopPlugin from "@frugally3683/agent-loop-plugin"
-
-export default agentLoopPlugin
-```
-
-### Advanced Combined Usage
-
-```typescript
-import { createTaskContinuation, createGoalManagement } from "@frugally3683/agent-loop-plugin"
-
-export default function myPlugin(ctx: PluginContext) {
-  // Create goal management first (no ctx needed)
-  const goalManagement = createGoalManagement({
-    goalsBasePath: "/custom/path/to/goals",
-  })
-
-  // Create task continuation with goal management integration
-  const taskContinuation = createTaskContinuation(ctx, {
-    countdownSeconds: 3,
-    goalManagement, // Enable goal-aware continuation
-  })
-
-  // Register event handlers
-  ctx.on("event", goalManagement.handler)
-  ctx.on("event", taskContinuation.handler)
-
-  return { goalManagement, taskContinuation }
-}
-```
-
-## Goal Management API
-
-The goal management system provides the following functions:
-
-### createGoal - Create a New Goal
+#### createGoal
 
 Creates a new active goal for the session. Overwrites any existing goal.
 
@@ -155,19 +257,9 @@ interface GoalManagement {
 }
 ```
 
-**Parameters:**
-
-- `sessionID`: The session identifier
-- `title`: Short, descriptive title for the goal
-- `doneCondition`: Description of what constitutes goal completion
-- `description` (optional): Detailed explanation of the goal
-
-**Returns:** The created goal object
-
-**Example:**
+**Example**:
 
 ```typescript
-// Set a goal for an agent
 const goal = await goalManagement.createGoal(
   sessionID,
   "Implement user authentication",
@@ -176,9 +268,9 @@ const goal = await goalManagement.createGoal(
 )
 ```
 
-### getGoal - Retrieve Current Goal
+#### getGoal
 
-Gets the current goal for a session, or null if no goal exists.
+Retrieves the current goal for a session, or null if no goal exists.
 
 ```typescript
 interface GoalManagement {
@@ -186,16 +278,9 @@ interface GoalManagement {
 }
 ```
 
-**Parameters:**
-
-- `sessionID`: The session identifier
-
-**Returns:** The current goal object, or null if no goal exists
-
-**Example:**
+**Example**:
 
 ```typescript
-// Check current goal
 const currentGoal = await goalManagement.getGoal(sessionID)
 if (currentGoal) {
   console.log(`Working on: ${currentGoal.title}`)
@@ -203,7 +288,7 @@ if (currentGoal) {
 }
 ```
 
-### completeGoal - Complete a Goal
+#### completeGoal
 
 Marks the current goal as completed and records the completion timestamp.
 
@@ -213,16 +298,9 @@ interface GoalManagement {
 }
 ```
 
-**Parameters:**
-
-- `sessionID`: The session identifier
-
-**Returns:** The completed goal object, or null if no goal was active
-
-**Example:**
+**Example**:
 
 ```typescript
-// Mark goal as complete
 const completedGoal = await goalManagement.completeGoal(sessionID)
 if (completedGoal) {
   console.log(`Goal completed: ${completedGoal.title}`)
@@ -230,96 +308,78 @@ if (completedGoal) {
 }
 ```
 
-### goal_set and goal_done Commands
+### Task Continuation with Goal Awareness
 
-The goal management system automatically handles special commands:
-
-**goal_set** - Create a goal via command:
+The task continuation system integrates with goal management for intelligent session continuation:
 
 ```typescript
-// When user sends a command event with:
-await ctx.client.session.prompt({
-  path: { id: sessionID },
-  body: {
-    parts: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          command: "goal_set",
-          args: {
-            title: "Implement feature X",
-            done_condition: "Feature X is complete and tested",
-            description: "Detailed description here",
-          },
-        }),
-      },
-    ],
+import { createTaskContinuation } from "@frugally3683/agent-loop-plugin"
+
+export default function myPlugin(ctx: PluginContext) {
+  const goalManagement = createGoalManagement({})
+
+  const taskContinuation = createTaskContinuation(ctx, {
+    countdownSeconds: 3,
+    goalManagement, // Enable goal-aware continuation
+  })
+
+  return { taskContinuation, goalManagement }
+}
+```
+
+## Tool Development Patterns
+
+### Using the tool() Decorator
+
+This plugin demonstrates the modern OpenCode tool pattern using the `tool()` decorator from `@opencode-ai/plugin`:
+
+```typescript
+import { tool } from "@opencode-ai/plugin"
+
+export const myTool = tool({
+  description: `My Custom Tool
+  
+  A detailed description of what this tool does and when to use it.
+  
+  **Parameters:**
+  - \`param1\`: Description of first parameter
+  - \`param2\`: Description of second parameter`,
+
+  args: {
+    param1: tool.schema.string().describe("First parameter description"),
+    param2: tool.schema.number().describe("Second parameter description"),
+    optionalParam: tool.schema.boolean().optional().describe("Optional parameter"),
+  },
+
+  async execute(args, context) {
+    // Tool implementation
+    return `Tool executed with: ${args.param1}, ${args.param2}`
   },
 })
 ```
 
-**goal_done** - Complete a goal via command:
+### Schema Definition Best Practices
+
+1. **Use Descriptive Names**: Name parameters clearly to help LLM agents understand their purpose
+2. **Add Descriptions**: Use `.describe()` to provide context for each parameter
+3. **Validate Input Types**: Use appropriate schema types (string, number, boolean, etc.)
+4. **Mark Optional Parameters**: Use `.optional()` for non-required parameters
+5. **Provide Defaults**: Use `.default()` when appropriate for optional parameters
+
+### Tool Context
+
+Tools receive a context object with session information:
 
 ```typescript
-// When user sends a command event with:
-await ctx.client.session.prompt({
-  path: { id: sessionID },
-  body: {
-    parts: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          command: "goal_done",
-        }),
-      },
-    ],
-  },
-})
-```
-
-### Additional Helper Functions
-
-```typescript
-interface GoalManagement {
-  // Read the current goal for a session
-  readGoal: (sessionID: string) => Promise<Goal | null>
-
-  // Write a goal to storage (low-level)
-  writeGoal: (sessionID: string, goal: Goal) => Promise<void>
-
-  // Check if session has an active (non-completed) goal
-  hasActiveGoal: (sessionID: string) => Promise<boolean>
+interface ToolContext {
+  sessionID: string // Current session identifier
+  messageID: string // Current message identifier
+  agent: string // Current agent name
+  abort: AbortSignal // Signal for cancellation
 }
 ```
 
-**Example - Check for active goal:**
-
-```typescript
-const hasActive = await goalManagement.hasActiveGoal(sessionID)
-if (!hasActive) {
-  // Prompt agent to set a new goal
-  console.log("No active goal - what should we work on?")
-}
-```
-
-### cleanup Method
-
-The goal management system includes a cleanup method for proper resource management:
-
-```typescript
-interface GoalManagement {
-  cleanup: () => Promise<void>
-}
-```
-
-**Example:**
-
-```typescript
-// Proper cleanup when plugin is unloaded
-await goalManagement.cleanup()
-```
-
-## Goal Usage in AI Agent Workflows
+## Integration Patterns
 
 ### Pattern 1: Goal-Directed Task Execution
 
@@ -327,19 +387,18 @@ AI agents can use goals to maintain focus on overarching objectives:
 
 ```typescript
 // Agent sets a high-level goal at the start of a complex task
-await goalManagement.createGoal(
-  sessionID,
-  "Build REST API for task management",
-  "GET, POST, PUT, DELETE endpoints work for tasks with proper error handling",
-  "Create a complete REST API with Express.js including validation and authentication"
-)
+await goal_set({
+  title: "Build REST API for task management",
+  done_condition: "GET, POST, PUT, DELETE endpoints work for tasks with proper error handling",
+  description: "Create a complete REST API with Express.js including validation and authentication",
+})
 
-// Agent can query the goal to stay on track
-const currentGoal = await goalManagement.getGoal(sessionID)
-console.log(`Remember the goal: ${currentGoal.title}`)
+// Agent can check the goal to stay on track
+const goalInfo = await goal_status()
+console.log(`Remember the goal: ${goalInfo}`)
 
 // When API is complete, mark goal as done
-await goalManagement.completeGoal(sessionID)
+await goal_done()
 ```
 
 ### Pattern 2: Hierarchical Goal Setting
@@ -348,25 +407,23 @@ Agents can break down complex objectives into sub-goals:
 
 ```typescript
 // Set main project goal
-await goalManagement.createGoal(
-  sessionID,
-  "Complete e-commerce platform",
-  "Users can browse products, add to cart, checkout, and receive order confirmation"
-)
+await goal_set({
+  title: "Complete e-commerce platform",
+  done_condition:
+    "Users can browse products, add to cart, checkout, and receive order confirmation",
+})
 
 // When starting a specific feature, update the goal
-await goalManagement.createGoal(
-  sessionID,
-  "Implement shopping cart",
-  "Users can add/remove items, view cart contents, and proceed to checkout"
-)
+await goal_set({
+  title: "Implement shopping cart",
+  done_condition: "Users can add/remove items, view cart contents, and proceed to checkout",
+})
 
 // Later, move to next goal
-await goalManagement.createGoal(
-  sessionID,
-  "Implement checkout flow",
-  "Users can enter shipping info, payment details, and receive order confirmation"
-)
+await goal_set({
+  title: "Implement checkout flow",
+  done_condition: "Users can enter shipping info, payment details, and receive order confirmation",
+})
 ```
 
 ### Pattern 3: Goal-Integrated Todo System
@@ -375,11 +432,10 @@ Combine goals with todos for comprehensive task management:
 
 ```typescript
 // Set a goal
-const goal = await goalManagement.createGoal(
-  sessionID,
-  "Deploy application to production",
-  "Application is running in production with SSL and accessible via domain"
-)
+await goal_set({
+  title: "Deploy application to production",
+  done_condition: "Application is running in production with SSL and accessible via domain",
+})
 
 // Create todos that support the goal
 await todowrite([
@@ -391,7 +447,7 @@ await todowrite([
 ])
 
 // When all todos are complete, mark goal as done
-await goalManagement.completeGoal(sessionID)
+await goal_done()
 ```
 
 ### Pattern 4: Session Persistence
@@ -400,18 +456,17 @@ Goals persist across sessions, making them ideal for long-running workflows:
 
 ```typescript
 // Session 1: Agent sets a complex goal
-await goalManagement.createGoal(
-  sessionID,
-  "Migrate legacy database to new schema",
-  "All data migrated, applications updated, old database decommissioned"
-)
+await goal_set({
+  title: "Migrate legacy database to new schema",
+  done_condition: "All data migrated, applications updated, old database decommissioned",
+})
 
 // Session ends, but goal persists...
 
 // Session 2: Agent checks goal and continues work
-const goal = await goalManagement.getGoal(sessionID)
-if (goal && goal.status === "active") {
-  console.log(`Resuming work on: ${goal.title}`)
+const goalInfo = await goal_status()
+if (goalInfo.includes("Migrate legacy database")) {
+  console.log("Resuming work on database migration...")
   // Continue with migration tasks...
 }
 ```
@@ -421,85 +476,50 @@ if (goal && goal.status === "active") {
 Agents can use the done_condition to evaluate progress:
 
 ```typescript
-const goal = await goalManagement.getGoal(sessionID)
-if (goal) {
+const goalInfo = await goal_status()
+if (goalInfo.includes("🟡 In Progress")) {
   // Check if done condition is met
   const progress = assessProgress()
 
-  if (progress.meetsCriteria(goal.done_condition)) {
-    await goalManagement.completeGoal(sessionID)
+  if (progress.meetsCriteria()) {
+    await goal_done()
     console.log("Goal completion criteria met!")
   } else {
-    console.log(`Still working: ${goal.done_condition}`)
+    console.log("Still working toward goal completion...")
   }
 }
 ```
 
-## Integration with Task Continuation
+## Configuration Options
 
-The goal management system integrates seamlessly with the task continuation system:
+### Plugin Options
 
-1. **Goal-First Planning**: Agents can set goals that guide todo creation
-2. **Automatic Continuation**: When sessions become idle with incomplete todos OR active goals, they continue automatically
-3. **Goal-Aware Continuations**: Continuation prompts can reference the current goal
-
-```typescript
-// Create goal management
-const goalManagement = createGoalManagement({})
-
-// Create task continuation with goal integration
-const taskContinuation = createTaskContinuation(ctx, {
-  goalManagement, // Enable goal-aware continuation
-})
-
-// When building continuation prompts, include goal context
-function buildGoalAwarePrompt(todos: Todo[], goal: Goal | null): string {
-  let prompt = ""
-
-  if (goal) {
-    prompt += `[CURRENT GOAL: ${goal.title}]
-${goal.done_condition}
-
-`
-  }
-
-  prompt += `You have ${incompleteCount} incomplete task(s). Work on them NOW without asking for permission.
-
-PENDING TASKS:
-${todos.map((t, i) => `${i + 1}. [${t.status}] ${t.content}`).join("\n")}
-`
-
-  return prompt
-}
-```
-
-## Custom Options
+| Option             | Type    | Default | Description                              |
+| ------------------ | ------- | ------- | ---------------------------------------- |
+| `taskLoop`         | boolean | true    | Enable task loop functionality           |
+| `countdownSeconds` | number  | 2       | Seconds to wait before auto-continuation |
+| `errorCooldownMs`  | number  | 3000    | Cooldown period after errors             |
+| `toastDurationMs`  | number  | 900     | Toast notification duration              |
+| `debug`            | boolean | true    | Enable debug logging                     |
+| `logFilePath`      | string  | -       | Path to log file for debugging           |
 
 ### Goal Management Options
 
-```typescript
-import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
-
-const goalManagement = createGoalManagement({
-  goalsBasePath: "/custom/path/to/goals", // Custom goal storage location
-})
-```
+| Option          | Type   | Default                                   | Description                       |
+| --------------- | ------ | ----------------------------------------- | --------------------------------- |
+| `goalsBasePath` | string | ~/.local/share/opencode/plugin/agent-loop | Custom base path for goal storage |
 
 ### Task Continuation Options
 
-```typescript
-import { createTaskContinuation } from "@frugally3683/agent-loop-plugin"
-
-const taskContinuation = createTaskContinuation(ctx, {
-  countdownSeconds: 3, // Seconds to wait before continuation (default: 2)
-  errorCooldownMs: 5000, // Cooldown after errors (default: 3000)
-  toastDurationMs: 900, // Toast notification duration (default: 900)
-  agent: "builder", // Agent name for continuations
-  model: "claude-3-5-sonnet", // Model name for continuations
-  logFilePath: "./plugin.log", // Log file path
-  goalManagement, // Goal management instance for goal-aware continuation
-})
-```
+| Option             | Type           | Default | Description                                   |
+| ------------------ | -------------- | ------- | --------------------------------------------- |
+| `countdownSeconds` | number         | 2       | Seconds to wait before continuation           |
+| `errorCooldownMs`  | number         | 3000    | Cooldown period after errors                  |
+| `toastDurationMs`  | number         | 900     | Toast notification duration                   |
+| `agent`            | string         | -       | Agent name for continuation prompts           |
+| `model`            | string         | -       | Model name for continuation prompts           |
+| `logFilePath`      | string         | -       | Path to log file for debugging                |
+| `goalManagement`   | GoalManagement | -       | Goal management instance for goal integration |
 
 ## OpenCode SDK Integration
 
@@ -556,70 +576,6 @@ interface PluginContext {
   }
 }
 ```
-
-## Features
-
-### Task Continuation Features
-
-- **Automatic Continuation**: Sessions continue automatically when tasks remain
-- **Countdown Timer**: Visual countdown before continuation
-- **User Cancellation**: User messages cancel pending continuations
-- **Error Handling**: Graceful cooldown periods after errors
-- **Completion Detection**: Detects when all tasks are complete
-- **Message Filtering**: Correctly handles OpenCode message updates without cancelling countdowns
-- **Session Tracking**: Tracks agent/model for consistent continuations
-- **Goal-Aware Continuation**: Continues when active goals exist, not just incomplete todos
-
-### Goal Management Features
-
-- **Persistent Goals**: Goals persist across sessions
-- **Single Active Goal**: One goal per session prevents confusion
-- **Clear Completion Criteria**: Each goal defines when it's done
-- **Timestamp Tracking**: Records creation and completion times
-- **Storage Persistence**: Goals survive plugin restarts
-- **Session Isolation**: Each session has its own goal storage
-- **Command Support**: Automatic handling of goal_set and goal_done commands
-- **Goal Integration**: Task continuation respects active goals
-
-## Message Handling
-
-OpenCode sends multiple `message.updated` events for the same message. This plugin correctly filters:
-
-- **New User Messages**: Cancel the countdown (genuine user input)
-- **Message Updates**: Do NOT cancel the countdown (summary updates, metadata changes)
-
-This prevents message updates from incorrectly interrupting the auto-continuation flow.
-
-## Configuration
-
-### Plugin Options
-
-| Option             | Type    | Default | Description                              |
-| ------------------ | ------- | ------- | ---------------------------------------- |
-| `taskLoop`         | boolean | true    | Enable task loop functionality           |
-| `countdownSeconds` | number  | 2       | Seconds to wait before auto-continuation |
-| `errorCooldownMs`  | number  | 3000    | Cooldown period after errors             |
-| `toastDurationMs`  | number  | 900     | Toast notification duration              |
-| `debug`            | boolean | true    | Enable debug logging                     |
-| `logFilePath`      | string  | -       | Path to log file for debugging           |
-
-### Goal Management Options
-
-| Option          | Type   | Default                                   | Description                       |
-| --------------- | ------ | ----------------------------------------- | --------------------------------- |
-| `goalsBasePath` | string | ~/.local/share/opencode/plugin/agent-loop | Custom base path for goal storage |
-
-### Task Continuation Options
-
-| Option             | Type           | Default | Description                                   |
-| ------------------ | -------------- | ------- | --------------------------------------------- |
-| `countdownSeconds` | number         | 2       | Seconds to wait before continuation           |
-| `errorCooldownMs`  | number         | 3000    | Cooldown period after errors                  |
-| `toastDurationMs`  | number         | 900     | Toast notification duration                   |
-| `agent`            | string         | -       | Agent name for continuation prompts           |
-| `model`            | string         | -       | Model name for continuation prompts           |
-| `logFilePath`      | string         | -       | Path to log file for debugging                |
-| `goalManagement`   | GoalManagement | -       | Goal management instance for goal integration |
 
 ## Development
 
@@ -682,11 +638,42 @@ Goals are stored as JSON files in the following structure:
 3. **Reasonable Scope**: Goals should be achievable within a few hours to days
 4. **Update Goals**: When objectives change, update the goal rather than creating new ones
 5. **Use with Todos**: Combine goals with todos for comprehensive task management
-6. **Complete Goals**: Always call completeGoal when a goal is achieved
-7. **Proper Cleanup**: Call cleanup method when plugin is unloaded
-8. **Integration**: Enable goal-aware continuation for better agent behavior
+6. **Complete Goals**: Always call goal_done when a goal is achieved
+7. **Cancel When Needed**: Use goal_cancel when goals are no longer relevant
+8. **Leverage Tools**: Use the goal tools during conversations for better agent coordination
 
 ## API Reference
+
+### agentLoopPlugin
+
+```typescript
+const agentLoopPlugin: Plugin = async (ctx: PluginContext): Promise<PluginResult>
+```
+
+**Parameters:**
+
+- `ctx`: Plugin context with session and tui access
+
+**Returns:** PluginResult with tools and event handlers
+
+**Tools Provided:**
+
+- `goal_set`: Set a new goal for the session
+- `goal_status`: Check current goal status
+- `goal_done`: Mark current goal as completed
+- `goal_cancel`: Cancel current goal
+
+### createGoalManagement
+
+```typescript
+function createGoalManagement(options?: GoalManagementOptions): GoalManagement
+```
+
+**Parameters:**
+
+- `options`: Optional configuration for goal management
+
+**Returns:** GoalManagement interface with readGoal, writeGoal, createGoal, completeGoal, getGoal, hasActiveGoal, handler, and cleanup methods
 
 ### createTaskContinuation
 
@@ -704,17 +691,63 @@ function createTaskContinuation(
 
 **Returns:** TaskContinuation interface with handler, markRecovering, markRecoveryComplete, cancel, and cleanup methods
 
-### createGoalManagement
+## Migration Guide
 
-```typescript
-function createGoalManagement(options?: GoalManagementOptions): GoalManagement
-```
+### From Previous Versions
 
-**Parameters:**
+If you're migrating from an older version of this plugin:
 
-- `options`: Optional configuration for goal management (no ctx needed)
+1. **Import Changes**: Update imports to use the new structure
 
-**Returns:** GoalManagement interface with readGoal, writeGoal, createGoal, completeGoal, getGoal, hasActiveGoal, handler, and cleanup methods
+   ```typescript
+   // Old way
+   import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
+
+   // New way (still supported)
+   import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
+   ```
+
+2. **Tool Usage**: Tools are now automatically exposed to agents
+
+   ```typescript
+   // Old way - manual command handling
+   .prompt({
+   await ctx.client.session     path: { id: sessionID },
+     body: {
+       parts: [{
+         type: "text",
+         text: JSON.stringify({
+           command: "goal_set",
+           args: { title: "...", done_condition: "..." }
+         })
+       }]
+     }
+   })
+
+   // New way - direct tool calls
+   await goal_set({
+     title: "...",
+     done_condition: "...",
+     description: "..."
+   })
+   ```
+
+3. **Plugin Integration**: The plugin now automatically handles tool exposure
+
+   ```typescript
+   // Just import and use the plugin
+   import agentLoopPlugin from "@frugally3683/agent-loop-plugin"
+
+   export default agentLoopPlugin
+   ```
+
+### New Tool Pattern Benefits
+
+- **Natural Language Interface**: Agents can call tools using natural language
+- **Automatic Schema Validation**: Input validation built into the tool pattern
+- **Better Error Handling**: Consistent error responses across all tools
+- **Context Awareness**: Tools have access to session context automatically
+- **Type Safety**: Full TypeScript support for tool definitions
 
 ## License
 
