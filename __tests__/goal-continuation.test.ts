@@ -4,7 +4,6 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as fs from "node:fs/promises"
-import * as path from "node:path"
 import type { PluginContext, Goal, GoalManagement } from "../types.js"
 import { createTaskContinuation, createGoalManagement } from "../index.js"
 
@@ -57,7 +56,7 @@ describe("Goal-Aware Continuation Integration", () => {
     vi.mocked(fs.writeFile).mockReset()
     vi.mocked(fs.mkdir).mockReset()
 
-    vi.mocked(fs.readFile).mockImplementation(async (filePath, encoding) => {
+    vi.mocked(fs.readFile).mockImplementation(async (filePath, _encoding) => {
       const sessionMatch = (filePath as string).match(/\/([^/]+)\/goal\.json$/)
       if (sessionMatch) {
         const sessionId = sessionMatch[1]
@@ -71,7 +70,7 @@ describe("Goal-Aware Continuation Integration", () => {
       throw error
     })
 
-    vi.mocked(fs.writeFile).mockImplementation(async (filePath, data, encoding) => {
+    vi.mocked(fs.writeFile).mockImplementation(async (filePath, data, _encoding) => {
       const sessionMatch = (filePath as string).match(/\/([^/]+)\/goal\.json$/)
       if (sessionMatch) {
         const sessionId = sessionMatch[1]
@@ -83,7 +82,7 @@ describe("Goal-Aware Continuation Integration", () => {
     vi.mocked(fs.mkdir).mockResolvedValue(undefined)
 
     // Create goal management instance
-    goalManagement = createGoalManagement(mockContext, {
+    goalManagement = createGoalManagement(mockContext as any, {
       goalsBasePath: "/test/goals",
     })
   })
@@ -96,7 +95,7 @@ describe("Goal-Aware Continuation Integration", () => {
     await goalManagement.createGoal("test-session", "Test Goal", "Goal is completed")
 
     // Create task continuation with goal management
-    const taskContinuation = createTaskContinuation(mockContext, {
+    const taskContinuation = createTaskContinuation(mockContext as any, {
       goalManagement,
       countdownSeconds: 0.1, // Short countdown for testing
     })
@@ -128,7 +127,7 @@ describe("Goal-Aware Continuation Integration", () => {
     await goalManagement.completeGoal("test-session")
 
     // Create task continuation with goal management
-    const taskContinuation = createTaskContinuation(mockContext, {
+    const taskContinuation = createTaskContinuation(mockContext as any, {
       goalManagement,
       countdownSeconds: 0.1,
     })

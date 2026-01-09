@@ -12,13 +12,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import * as fs from "node:fs/promises"
-import * as path from "node:path"
-
-// Mock the fs module
-vi.mock("node:fs/promises")
 
 // Import the actual types and functions from the codebase
-import type { Goal, GoalManagement, GoalManagementOptions, LoopEvent, PluginContext } from "../types.js"
+import type { Goal, LoopEvent, PluginContext } from "../types.js"
 import { createGoalManagement } from "../index.js"
 
 // ============================================================================
@@ -76,7 +72,7 @@ function setupMockFileSystem(ctx: MockFileSystemContext) {
   // Storage for goals from any session
   const sessionGoals = new Map<string, Goal>()
 
-  vi.mocked(fs.readFile).mockImplementation(async (filePath, encoding) => {
+  vi.mocked(fs.readFile).mockImplementation(async (filePath, _encoding) => {
     // Extract session ID from path and check if goal exists
     const sessionMatch =  (filePath as string).match(/\/([^/]+)\/goal\.json$/)
     if (sessionMatch) {
@@ -95,7 +91,7 @@ function setupMockFileSystem(ctx: MockFileSystemContext) {
     throw error
   })
 
-  vi.mocked(fs.writeFile).mockImplementation(async (filePath, data, encoding) => {
+  vi.mocked(fs.writeFile).mockImplementation(async (filePath, data, _encoding) => {
     ctx.writeCalls.push([filePath as string, data as string])
     // Extract session ID and store the goal
     const sessionMatch =  (filePath as string).match(/\/([^/]+)\/goal\.json$/)

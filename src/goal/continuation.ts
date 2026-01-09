@@ -64,8 +64,17 @@ function checkInterruption(error: unknown): { isInterruption: boolean; message: 
       message.includes("aborted") ||
       message.includes("cancelled") ||
       message.includes("interrupted") ||
+      message.includes("canceled") ||
+      message.includes("stop") ||
+      message.includes("stopped") ||
+      message.includes("terminate") ||
+      message.includes("terminated") ||
+      message.includes("quit") ||
+      message.includes("exit") ||
       error.name === "AbortError" ||
-      error.name === "CancellationError";
+      error.name === "CancellationError" ||
+      error.name === "ExitError" ||
+      error.name === "TerminateError";
 
     return {
       isInterruption: isInterrupt,
@@ -75,17 +84,31 @@ function checkInterruption(error: unknown): { isInterruption: boolean; message: 
 
   // Handle object structures
   if (typeof error === "object" && error !== null) {
-    const errorObj = error as { name?: string; data?: { message?: string } };
+    const errorObj = error as { name?: string; data?: { message?: string }; code?: string; signal?: string };
     const name = errorObj.name ?? "";
     const errorMessage = errorObj.data?.message ?? "";
-    const message = errorMessage || name || "Object error";
+    const code = errorObj.code ?? "";
+    const signal = errorObj.signal ?? "";
+    const message = errorMessage || name || code || signal || "Object error";
     const isInterrupt =
       name.includes("Abort") ||
       name.includes("Cancel") ||
       name.includes("Interrupt") ||
+      name.includes("Exit") ||
+      name.includes("Terminate") ||
+      code.includes("cancel") ||
+      code.includes("abort") ||
+      code.includes("exit") ||
+      code.includes("terminate") ||
+      signal?.includes("SIGTERM") ||
+      signal?.includes("SIGINT") ||
+      signal?.includes("SIGKILL") ||
       errorMessage.includes("aborted") ||
       errorMessage.includes("cancelled") ||
-      errorMessage.includes("interrupted");
+      errorMessage.includes("canceled") ||
+      errorMessage.includes("interrupted") ||
+      errorMessage.includes("stopped") ||
+      errorMessage.includes("terminated");
 
     return {
       isInterruption: isInterrupt,
@@ -97,6 +120,39 @@ function checkInterruption(error: unknown): { isInterruption: boolean; message: 
     isInterruption: false,
     message: String(error),
   };
+}
+
+/**
+ * Check if a message represents user cancellation
+ */
+function checkMessageCancellation(message: string): boolean {
+  if (!message || typeof message !== "string") return false;
+
+  const lowerMessage = message.toLowerCase();
+  const cancellationPatterns = [
+    /cancel\s+(this\s+)?(task|goal|operation|execution)/i,
+    /stop\s+(this\s+)?(task|goal|operation|execution)/i,
+    /abort\s+(this\s+)?(task|goal|operation|execution)/i,
+    /terminate\s+(this\s+)?(task|goal|operation|execution)/i,
+    /don't\s+do\s+(this|that)/i,
+    /never\s+mind/i,
+    /skip\s+this/i,
+    /i\s+changed\s+my\s+mind/i,
+    /that's\s+all/i,
+    /that's\s+enough/i,
+    /enough\s+(with\s+)?(this|that)/i,
+    /please\s+stop/i,
+    /please\s+cancel/i,
+    /please\s+abort/i,
+    /never\s+mind/i,
+    /on\s+second\s+thought/i,
+    /actually,\s+don't/i,
+    /actually,\s+stop/i,
+    /wait,\s+cancel/i,
+    /wait,\s+stop/i,
+  ];
+
+  return cancellationPatterns.some(pattern => pattern.test(lowerMessage));
 }
 
 /**
@@ -487,6 +543,9 @@ INSTRUCTIONS:
     const messageID = (info as { id?: string })?.id;
     const role = (info as { role?: string })?.role;
     const summary = (info as { summary?: unknown })?.summary;
+    const messageContent = (info as { content?: string; text?: string; message?: string })?.content ||
+                          (info as { content?: string; text?: string; message?: string })?.text ||
+                          (info as { content?: string; text?: string; message?: string })?.message;
 
     if (messageID) {
       const lastProcessed = lastProcessedMessageID.get(sessionID);
@@ -499,6 +558,30 @@ INSTRUCTIONS:
             clearTimeout(existingTimeout);
             pendingCountdowns.delete(sessionID);
             log.debug("New user message cancelled pending countdown", { sessionID, messageID });
+          }
+
+          // Check if the message indicates user cancellation
+          if (messageContent && checkMessageCancellation(messageContent)) {
+            const cancelTimeout = pendingCountdowns.get(sessionID);
+            if (cancelTimeout) {
+              clearTimeout(cancelTimeout);
+              pendingCountdowns.delete(sessionID);
+            }
+            errorCooldowns.set(sessionID, Date.now());
+            log.debug("User cancellation detected in message", { sessionID, messageID, content: messageContent.substring(0, 100) });
+
+            try {
+              await ctx.client.tui.showToast({
+                body: {
+                  title: "Task Cancelled",
+                  message: "Continuation cancelled based on your message",
+                  variant: "warning",
+                  duration: 2000,
+                },
+              });
+            } catch {
+              // Ignore toast errors
+            }
           }
         }
       }
@@ -550,6 +633,33 @@ INSTRUCTIONS:
       clearTimeout(existingTimeout);
       pendingCountdowns.delete(sessionID);
       log.debug("Session became busy, cancelled pending countdown", { sessionID });
+    }
+  };
+
+  const handleSessionCancelled = async (sessionID: string): Promise<void> => {
+    // Clear any pending countdown
+    const existingTimeout = pendingCountdowns.get(sessionID);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      pendingCountdowns.delete(sessionID);
+    }
+
+    // Set error cooldown to prevent immediate continuation
+    errorCooldowns.set(sessionID, Date.now());
+
+    log.debug("Session cancellation detected, stopping continuation", { sessionID });
+
+    try {
+      await ctx.client.tui.showToast({
+        body: {
+          title: "Session Cancelled",
+          message: "Task continuation cancelled by user",
+          variant: "warning",
+          duration: 2000,
+        },
+      });
+    } catch {
+      // Ignore toast errors
     }
   };
 
@@ -608,6 +718,9 @@ INSTRUCTIONS:
         break;
       case "session.busy":
         await handleSessionBusy(sessionID);
+        break;
+      case "session.cancelled":
+        await handleSessionCancelled(sessionID);
         break;
     }
   };

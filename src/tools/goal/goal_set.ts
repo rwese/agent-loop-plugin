@@ -1,5 +1,4 @@
 import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
-import type { Goal } from "../../types.js";
 import { createGoalManagement } from "../../goal/management.js";
 
 const DESCRIPTION = `Goal Setting Tool
