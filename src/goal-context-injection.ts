@@ -1,0 +1,203 @@
+/**
+ * Goal Context Injection
+ *
+ * Injects the current goal into session context so agents don't forget their goals.
+ * Ensures goal context is only injected once per session and handles plugin reload/reconnection.
+ */
+
+import type { PluginContext, Goal } from "./types.js";
+
+const GOAL_GUIDANCE = `
+## Active Goal
+
+The agent has an active goal for this session. Use the goal tools to manage it:
+- \`goal_status\` - Check the current goal details
+- \`goal_done\` - Mark the goal as completed when the done condition is met
+- \`goal_cancel\` - Cancel the goal if it's no longer relevant
+
+**Remember:** Work toward completing the goal's done condition.
+`;
+
+/**
+ * Check if goal context was already injected in a session
+ */
+async function hasGoalContext(
+  client: PluginContext["client"],
+  sessionID: string
+): Promise<boolean> {
+  try {
+    const existing = await client.session.messages({
+      path: { id: sessionID },
+    });
+
+    if (existing.data) {
+      const messages = existing.data as Array<{ parts?: unknown[]; info?: { parts?: unknown[] } }>;
+      return messages.some((msg) => {
+        const parts = (msg as any).parts || (msg.info as any).parts;
+        if (!parts) return false;
+        return (parts as Array<{ type?: string; text?: string }>).some(
+          (part) => part.type === "text" && part.text?.includes("<goal-context>")
+        );
+      });
+    }
+  } catch {
+    // On error, assume no goal context exists
+  }
+  return false;
+}
+
+/**
+ * Get session context information (model and agent)
+ */
+async function getSessionContext(
+  client: PluginContext["client"],
+  sessionID: string
+): Promise<{ model?: { providerID: string; modelID: string }; agent?: string } | undefined> {
+  try {
+    const session = await client.session.get({ path: { id: sessionID } });
+    if (session.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = session.data as any;
+      const model = data.model;
+      return {
+        model:
+          typeof model === "string"
+            ? undefined
+            : model
+              ? { providerID: model.providerID || "unknown", modelID: model.modelID || "unknown" }
+              : undefined,
+        agent: data.agent,
+      };
+    }
+  } catch {
+    // Silently fail if we can't get session context
+  }
+  return undefined;
+}
+
+/**
+ * Format goal for injection into context
+ */
+function formatGoalContext(goal: Goal): string {
+  return `<goal-context>
+${goal.title}
+${goal.description ? `Description: ${goal.description}` : ""}
+Done Condition: ${goal.done_condition}
+Status: ${goal.status}
+</goal-context>
+
+${GOAL_GUIDANCE}`;
+}
+
+/**
+ * Inject goal context into a session.
+ *
+ * Gets the current goal and injects it along with guidance.
+ * Silently skips if no goal exists for the session.
+ */
+export async function injectGoalContext(
+  ctx: PluginContext,
+  sessionID: string,
+  context?: { model?: { providerID: string; modelID: string }; agent?: string }
+): Promise<void> {
+  try {
+    // Get goal management instance
+    const gm = await getGoalManagement(ctx);
+    if (!gm) return;
+
+    // Get the current goal for this session
+    const goal = await gm.getGoal(sessionID);
+
+    if (!goal) {
+      return;
+    }
+
+    const goalContext = formatGoalContext(goal);
+
+    // Get session context if not provided
+    const sessionContext = context || (await getSessionContext(ctx.client, sessionID));
+
+    // Inject content via noReply + synthetic
+    // Must pass model and agent to prevent mode/model switching
+    await ctx.client.session.prompt({
+      path: { id: sessionID },
+      body: {
+        noReply: true,
+        model: sessionContext?.model,
+        agent: sessionContext?.agent,
+        parts: [{ type: "text", text: goalContext, synthetic: true }],
+      },
+    });
+  } catch {
+    // Silent skip if goal injection fails
+  }
+}
+
+// Lazy-loaded goal management to avoid circular dependencies
+let goalManagementInstance: ReturnType<typeof import("./goal/management.js").createGoalManagement> | null = null;
+
+async function getGoalManagement(ctx: PluginContext): Promise<ReturnType<typeof import("./goal/management.js").createGoalManagement> | null> {
+  if (!goalManagementInstance) {
+    const mod = await import("./goal/management.js");
+    goalManagementInstance = mod.createGoalManagement(ctx, {});
+  }
+  return goalManagementInstance;
+}
+
+/**
+ * Create goal context injection handler
+ */
+export function createGoalContextInjection(ctx: PluginContext) {
+  const injectedSessions = new Set<string>();
+
+  return {
+    /**
+     * Handle chat message events to inject goal context
+     */
+    handleChatMessage: async (input: {
+      sessionID: string;
+      model?: { providerID: string; modelID: string };
+      agent?: string;
+    }) => {
+      const sessionID = input.sessionID;
+
+      // Skip if already injected this session
+      if (injectedSessions.has(sessionID)) return;
+
+      // Check if goal-context was already injected (handles plugin reload/reconnection)
+      const hasContext = await hasGoalContext(ctx.client, sessionID);
+      if (hasContext) {
+        injectedSessions.add(sessionID);
+        return;
+      }
+
+      injectedSessions.add(sessionID);
+
+      const gm = await getGoalManagement(ctx);
+      if (!gm) return;
+
+      // Get the current goal
+      const goal = await gm.getGoal(sessionID);
+
+      if (!goal) {
+        return;
+      }
+
+      // Use input which has the resolved model/agent values
+      // This ensures our injected noReply message has identical model/agent
+      // to the real user message, preventing mode/model switching
+      await injectGoalContext(ctx, sessionID, input);
+    },
+
+    /**
+     * Handle session compacted events to reinject goal context
+     */
+    handleSessionCompacted: async (event: { properties?: { sessionID?: string } }) => {
+      const sessionID = event.properties?.sessionID;
+      if (!sessionID) return;
+
+      // Re-inject goal context on session compaction
+      await injectGoalContext(ctx, sessionID);
+    },
+  };
+}

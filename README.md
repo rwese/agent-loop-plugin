@@ -8,6 +8,7 @@ This plugin provides two complementary systems:
 
 1. **Task Continuation**: Automatically continues sessions when incomplete todos remain
 2. **Goal Management**: Structured goal tracking with persistence across sessions using the modern OpenCode tool pattern
+3. **Goal Context Injection**: Automatically injects the current goal into session context so agents never forget their objectives
 
 **Perfect for:**
 
@@ -490,7 +491,70 @@ if (goalInfo.includes("🟡 In Progress")) {
 }
 ```
 
-## Configuration Options
+### Goal Context Injection
+
+The plugin automatically injects the current goal into session context to ensure agents never forget their objectives. This provides persistent goal awareness across interactions.
+
+**Features:**
+
+- **Automatic Goal Injection**: Injects the current goal into new sessions
+- **Goal Guidance**: Provides helpful goal tool usage instructions
+- **Smart Deduplication**: Only injects context once per session
+- **Graceful Degradation**: Silently skips if no goal exists
+- **Session Recovery**: Re-injects goal context on session compaction
+- **Mode Preservation**: Maintains the current model and agent settings
+
+**How It Works:**
+
+1. **On New Sessions**: When a chat message is received, the plugin:
+   - Checks if goal context was already injected
+   - Gets the current goal for the session
+   - Injects goal context with helpful tool guidance
+   - Preserves model/agent settings to prevent mode switching
+
+2. **On Session Compaction**: When sessions are compacted, goal context is re-injected to maintain persistence
+
+3. **Goal Context Format**: The injected context includes:
+   - Goal title
+   - Goal description (if present)
+   - Done condition (what constitutes completion)
+   - Current status
+   - Guidance on using goal tools
+
+**Goal Context Example:**
+
+```xml
+<goal-context>
+Implement user authentication system
+Description: Create a complete authentication system with JWT tokens
+Done Condition: Users can sign up, log in, and log out securely
+Status: active
+</goal-context>
+
+## Goal Context
+
+The agent has an active goal for this session. Use the goal tools to manage it:
+- `goal_status` - Check the current goal details
+- `goal_done` - Mark the goal as completed when the done condition is met
+- `goal_cancel` - Cancel the goal if it's no longer relevant
+
+**Remember:** Work toward completing the goal's done condition.
+```
+
+**Benefits:**
+
+- **Never Forget Goals**: Agents always have the current goal in context
+- **Persistent Awareness**: Goal context survives session compaction and plugin reload
+- **Clear Focus**: Agents can see exactly what they should be working toward
+- **Tool Integration**: Provides immediate access to goal management tools
+
+**Configuration:**
+
+The goal context injection is automatic and requires no configuration. It gracefully handles:
+
+- Missing goals (no injection occurs)
+- Plugin reload/reconnection scenarios
+- Session compaction events
 
 ### Plugin Options
 

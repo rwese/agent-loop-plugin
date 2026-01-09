@@ -11,6 +11,7 @@ import { createLogger, initLogger } from "./logger.js";
 import { createTaskContinuation } from "./goal/continuation.js";
 import { createGoalManagement } from "./goal/management.js";
 import { createGoalTools } from "./tools/goal/index.js";
+import { createGoalContextInjection } from "./goal-context-injection.js";
 
 const log = createLogger("plugin");
 
@@ -41,6 +42,9 @@ export const agentLoopPlugin: Plugin = async (
   // Create goal tools for agents
   const goalTools = createGoalTools(ctx);
 
+  // Create goal context injection handler
+  const goalContext = createGoalContextInjection(ctx);
+
   log.info("Agent loop plugin initialized successfully");
 
   return {
@@ -50,9 +54,28 @@ export const agentLoopPlugin: Plugin = async (
       goal_done: goalTools.goal_done,
       goal_cancel: goalTools.goal_cancel,
     },
+    "chat.message": async (input: {
+      sessionID: string;
+      agent?: string;
+      model?: { providerID: string; modelID: string };
+      messageID?: string;
+      variant?: string;
+    }) => {
+      // Handle goal context injection for chat messages
+      await goalContext.handleChatMessage({
+        sessionID: input.sessionID,
+        model: input.model,
+        agent: input.agent,
+      });
+    },
     event: async ({ event }) => {
       if (!event) {
         return;
+      }
+
+      // Handle session compaction for goal context re-injection
+      if (event.type === "session.compacted") {
+        await goalContext.handleSessionCompacted(event as { properties?: { sessionID?: string } });
       }
 
       // Handle session deletion cleanup
