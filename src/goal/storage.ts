@@ -47,7 +47,7 @@ export async function readGoal(sessionID: string, basePath: string = GOALS_BASE_
     }
 
     // Validate status
-    if (!["active", "completed"].includes(goal.status)) {
+    if (!["active", "completed", "validated"].includes(goal.status)) {
       return null;
     }
 

@@ -40,6 +40,7 @@ export function createGoalManagement(
       status: "active",
       created_at: new Date().toISOString(),
       completed_at: null,
+      validated_at: null,
     };
 
     await writeGoalForSession(sessionID, goal);
@@ -61,6 +62,28 @@ export function createGoalManagement(
 
     await writeGoalForSession(sessionID, completedGoal);
     return completedGoal;
+  }
+
+  async function validateCompletedGoal(sessionID: string): Promise<Goal | null> {
+    const goal = await readGoalForSession(sessionID);
+
+    if (!goal) {
+      return null;
+    }
+
+    // Goal must be completed to be validated
+    if (goal.status !== "completed") {
+      return null;
+    }
+
+    const validatedGoal: Goal = {
+      ...goal,
+      status: "validated",
+      validated_at: new Date().toISOString(),
+    };
+
+    await writeGoalForSession(sessionID, validatedGoal);
+    return validatedGoal;
   }
 
   async function checkActiveGoal(sessionID: string): Promise<boolean> {
@@ -100,6 +123,14 @@ export function createGoalManagement(
           log.info(`Goal completed for session ${sessionID}: ${completedGoal.title}`);
         }
       }
+
+      // Handle goal.validate command
+      if (commandInfo.command === "goal_validate") {
+        const validatedGoal = await validateCompletedGoal(sessionID);
+        if (validatedGoal) {
+          log.info(`Goal validated for session ${sessionID}: ${validatedGoal.title}`);
+        }
+      }
     }
   }
 
@@ -131,6 +162,7 @@ export function createGoalManagement(
     writeGoal: writeGoalForSession,
     createGoal: createNewGoal,
     completeGoal: markGoalComplete,
+    validateGoal: validateCompletedGoal,
     getGoal: readGoalForSession,
     hasActiveGoal: checkActiveGoal,
     handler,

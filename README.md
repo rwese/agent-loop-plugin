@@ -180,6 +180,43 @@ goal_cancel({
 The goal has been removed.
 ```
 
+### goal_validate
+
+**Purpose**: Validate a completed goal after agent review. This is the final step in the goal lifecycle where the agent confirms the done condition has been met.
+
+**Usage**:
+
+```typescript
+goal_validate()
+```
+
+**Preconditions**:
+
+- Goal must be in "completed" status (use goal_done first)
+- Agent should review the goal and verify the done condition is satisfied
+
+**Parameters**: None required
+
+**Example Response**:
+
+```
+✅ Goal validated!
+
+**Title:** Implement user authentication
+**Status:** Validated
+**Completed:** 1/15/2024, 2:45 PM
+**Validated:** 1/15/2024, 3:00 PM
+**Done Condition:** Users can sign up, log in, and log out with secure password handling
+
+The goal has been successfully validated and is now complete.
+```
+
+**Goal Lifecycle**:
+
+1. **Active**: Goal is being worked on
+2. **Completed**: Agent has marked goal as done (goal_done)
+3. **Validated**: Agent has reviewed and confirmed the done condition is met (goal_validate)
+
 ## Goal Management API
 
 ### Goal Concepts
@@ -189,7 +226,7 @@ A **goal** represents a distinct objective that an AI agent should work toward. 
 - **Persistent Context**: Goals persist across sessions, helping agents remember their objectives
 - **Clear Completion Criteria**: Each goal has a defined "done condition" that specifies when it's achieved
 - **Structured Workflows**: Goals help organize complex multi-step workflows into coherent units
-- **Progress Tracking**: Goals track their status (active/completed) and completion timestamps
+- **Progress Tracking**: Goals track their status (active/completed/validated) and completion/validation timestamps
 
 ### Goal Structure
 
@@ -204,11 +241,13 @@ interface Goal {
   /** String description of what constitutes goal completion */
   done_condition: string
   /** Current status of the goal */
-  status: "active" | "completed"
+  status: "active" | "completed" | "validated"
   /** ISO timestamp when the goal was created */
   created_at: string
   /** ISO timestamp when the goal was completed, null if not completed */
   completed_at: string | null
+  /** ISO timestamp when the goal was validated, null if not validated */
+  validated_at: string | null
 }
 ```
 

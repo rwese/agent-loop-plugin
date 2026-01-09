@@ -38,10 +38,20 @@ export const goal_status = tool({
       return "📋 No active goal for this session.";
     }
 
-    const statusText = goal.status === "active" ? "🟡 In Progress" : "✅ Completed";
-    const completedText = goal.completed_at
-      ? `\n**Completed:** ${new Date(goal.completed_at).toLocaleString()}`
-      : "";
+    let statusText = "🟡 In Progress";
+    if (goal.status === "completed") {
+      statusText = "✅ Completed";
+    } else if (goal.status === "validated") {
+      statusText = "✓ Validated";
+    }
+
+    let completedText = "";
+    if (goal.completed_at) {
+      completedText = `\n**Completed:** ${new Date(goal.completed_at).toLocaleString()}`;
+    }
+    if (goal.validated_at) {
+      completedText += `\n**Validated:** ${new Date(goal.validated_at).toLocaleString()}`;
+    }
 
     return `🎯 **Current Goal:** ${goal.title}
 ${goal.description ? `**Description:** ${goal.description}` : ""}

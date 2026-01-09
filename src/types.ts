@@ -177,11 +177,13 @@ export interface Goal {
   /** String description of what constitutes goal completion */
   done_condition: string;
   /** Current status of the goal */
-  status: "active" | "completed";
+  status: "active" | "completed" | "validated";
   /** ISO timestamp when the goal was created */
   created_at: string;
   /** ISO timestamp when the goal was completed, null if not completed */
   completed_at: string | null;
+  /** ISO timestamp when the goal was validated, null if not validated */
+  validated_at: string | null;
 }
 
 /**
@@ -219,6 +221,8 @@ export interface GoalManagement {
   ) => Promise<Goal>;
   /** Mark a goal as completed */
   completeGoal: (sessionID: string) => Promise<Goal | null>;
+  /** Validate a completed goal (agent approval step) */
+  validateGoal: (sessionID: string) => Promise<Goal | null>;
   /** Get the current goal (alias for readGoal) */
   getGoal: (sessionID: string) => Promise<Goal | null>;
   /** Check if a session has an active (non-completed) goal */
