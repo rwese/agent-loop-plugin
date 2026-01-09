@@ -68,6 +68,20 @@ export const agentLoopPlugin: Plugin = async (
         model: input.model,
         agent: input.agent,
       });
+
+      // Log client structure for debugging prompt injection
+      try {
+        const client = ctx.client;
+        log.debug("Chat message client structure", {
+          hasClient: !!client,
+          clientKeys: client ? Object.keys(client) : [],
+          hasSession: !!client?.session,
+          sessionKeys: client?.session ? Object.keys(client.session) : [],
+          hasSessionPrompt: !!client?.session?.prompt,
+        });
+      } catch (error) {
+        log.warn("Failed to log client structure", { error });
+      }
     },
     event: async ({ event }) => {
       if (!event) {

@@ -157,13 +157,6 @@ If the done condition is not yet met, you can:
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const client = (ctx as any).client
-        console.log("🔍 Client object keys:", client ? Object.keys(client) : "client is undefined")
-        console.log("🔍 Client type:", typeof client)
-        
-        if (client?.session) {
-          console.log("🔍 Session object keys:", Object.keys(client.session))
-        }
-        
         if (client?.session?.prompt) {
           await client.session.prompt({
             path: { id: sessionID },
@@ -171,13 +164,10 @@ If the done condition is not yet met, you can:
               parts: [{ type: "text", text: validationPrompt, synthetic: true }],
             },
           })
-          console.log("✅ Validation prompt injected successfully for session:", sessionID)
-        } else {
-          console.warn("⚠️ client.session.prompt not available")
-          console.warn("🔍 Available in client:", client?.session ? Object.keys(client.session) : "no session")
         }
       } catch (error) {
-        console.error("❌ Failed to inject validation prompt:", error)
+        // Log error but don't fail the goal completion
+        console.error("Failed to inject validation prompt:", error);
       }
 
       return completionMessage

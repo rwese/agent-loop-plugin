@@ -6,6 +6,9 @@
  */
 
 import type { PluginContext, Goal } from "./types.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("goal-context-injection");
 
 const GOAL_GUIDANCE = `
 ## Active Goal
@@ -201,16 +204,23 @@ export async function injectValidationPrompt(
   try {
     // Get goal management to get the completed goal
     const gm = await getGoalManagement(ctx);
-    if (!gm) return;
+    if (!gm) {
+      log.warn("Goal management not available for validation prompt injection");
+      return;
+    }
 
     const goal = await gm.getGoal(sessionID);
     if (!goal || goal.status !== "completed") {
+      log.debug("No completed goal found for validation prompt", { sessionID, goalStatus: goal?.status });
       return;
     }
 
     // Check if validation prompt was already injected
     const hasPrompt = await hasValidationPrompt(ctx.client, sessionID);
-    if (hasPrompt) return;
+    if (hasPrompt) {
+      log.debug("Validation prompt already injected", { sessionID });
+      return;
+    }
 
     const validationPrompt = `<goal-validation-prompt>
 ## Goal Validation Required
@@ -238,6 +248,13 @@ If not yet complete, you can:
     // Get session context to preserve model and agent
     const sessionContext = await getSessionContext(ctx.client, sessionID);
 
+    log.debug("Injecting validation prompt", {
+      sessionID,
+      goalTitle: goal.title,
+      hasModel: !!sessionContext?.model,
+      hasAgent: !!sessionContext?.agent,
+    });
+
     // Inject validation prompt via noReply + synthetic
     await ctx.client.session.prompt({
       path: { id: sessionID },
@@ -248,8 +265,11 @@ If not yet complete, you can:
         parts: [{ type: "text", text: validationPrompt, synthetic: true }],
       },
     });
-  } catch {
-    // Silent skip if validation prompt injection fails
+
+    log.info("Validation prompt injected successfully", { sessionID, goalTitle: goal.title });
+  } catch (error) {
+    log.error("Failed to inject validation prompt", { sessionID, error });
+    throw error; // Re-throw to trigger retry
   }
 }
 
