@@ -75,13 +75,16 @@ If the done condition is not yet met, you can:
         await client.session.prompt({
           path: { id: sessionID },
           body: {
-            agent: (context as { agent?: string }).agent,
+            agent: context.agent,
             parts: [{ type: "text", text: validationPrompt, synthetic: true }],
           },
         })
+        console.log("✅ Validation prompt injected successfully for session:", sessionID)
+      } else {
+        console.warn("⚠️ client.session.prompt not available")
       }
-    } catch {
-      // Silently fail if we can't prompt - the completion message will still be returned
+    } catch (error) {
+      console.error("❌ Failed to inject validation prompt:", error)
     }
 
     return completionMessage
