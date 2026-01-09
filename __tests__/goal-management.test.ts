@@ -18,7 +18,7 @@ import * as path from "node:path"
 vi.mock("node:fs/promises")
 
 // Import the actual types and functions from the codebase
-import type { Goal, GoalManagement, GoalManagementOptions, LoopEvent } from "../types.js"
+import type { Goal, GoalManagement, GoalManagementOptions, LoopEvent, PluginContext } from "../types.js"
 import { createGoalManagement } from "../index.js"
 
 // ============================================================================
@@ -29,6 +29,26 @@ import { createGoalManagement } from "../index.js"
 vi.mock("node:path", () => ({
   dirname: vi.fn((p: string) => p.replace(/\/[^/]+$/, "")),
 }))
+
+// Create a mock PluginContext for testing
+function createMockPluginContext(): PluginContext {
+  return {
+    directory: "/test",
+    client: {
+      session: {
+        id: "test-session",
+        get: vi.fn(),
+        messages: vi.fn(),
+        prompt: vi.fn().mockResolvedValue(undefined),
+        todo: vi.fn().mockResolvedValue([]),
+      },
+      tui: {
+        showToast: vi.fn().mockResolvedValue(undefined),
+      },
+    },
+    on: vi.fn(),
+  }
+}
 
 interface MockFileSystemContext {
   basePath: string
@@ -95,11 +115,13 @@ function setupMockFileSystem(ctx: MockFileSystemContext) {
 
 describe("GoalManagement", () => {
   let mockFsContext: MockFileSystemContext
+  let mockContext: PluginContext
 
   beforeEach(() => {
     vi.useFakeTimers()
     mockFsContext = createMockFileSystem()
     setupMockFileSystem(mockFsContext)
+    mockContext = createMockPluginContext()
     vi.restoreAllMocks()
   })
 
@@ -114,7 +136,7 @@ describe("GoalManagement", () => {
 
   describe("createGoal - Goal Creation", () => {
     it("should create a new goal with active status", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -133,7 +155,7 @@ describe("GoalManagement", () => {
     })
 
     it("should create a goal with optional description", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -149,7 +171,7 @@ describe("GoalManagement", () => {
     })
 
     it("should generate goal with ISO timestamp", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -166,7 +188,7 @@ describe("GoalManagement", () => {
     })
 
     it("should store goal in file system", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -182,7 +204,7 @@ describe("GoalManagement", () => {
     })
 
     it("should return the created goal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -206,7 +228,7 @@ describe("GoalManagement", () => {
 
   describe("completeGoal - Goal Completion", () => {
     it("should mark a goal as completed", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -226,7 +248,7 @@ describe("GoalManagement", () => {
     })
 
     it("should update goal storage when completing", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -245,7 +267,7 @@ describe("GoalManagement", () => {
     })
 
     it("should return null when completing non-existent goal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -255,7 +277,7 @@ describe("GoalManagement", () => {
     })
 
     it("should set completed_at timestamp", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -283,7 +305,7 @@ describe("GoalManagement", () => {
 
   describe("readGoal - Goal Retrieval", () => {
     it("should retrieve an existing goal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -303,7 +325,7 @@ describe("GoalManagement", () => {
     })
 
     it("should return null for non-existent goal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -313,7 +335,7 @@ describe("GoalManagement", () => {
     })
 
     it("should return null when goal file is corrupted", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -326,7 +348,7 @@ describe("GoalManagement", () => {
     })
 
     it("should validate goal structure", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -348,7 +370,7 @@ describe("GoalManagement", () => {
 
   describe("Goal Overwrite Behavior", () => {
     it("should overwrite existing goal with new goal_set", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -374,7 +396,7 @@ describe("GoalManagement", () => {
     })
 
     it("should preserve completed_at when overwriting active goal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -390,7 +412,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle multiple session goals independently", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -417,7 +439,7 @@ describe("GoalManagement", () => {
 
   describe("Error Handling", () => {
     it("should return null when completing non-existent goal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -427,7 +449,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle read errors gracefully", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -440,7 +462,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle write errors gracefully", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -453,7 +475,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle directory creation errors", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -472,7 +494,7 @@ describe("GoalManagement", () => {
 
   describe("File I/O Operations", () => {
     it("should use correct file path for goal storage", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -491,7 +513,7 @@ describe("GoalManagement", () => {
     })
 
     it("should create directory structure recursively", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -501,7 +523,7 @@ describe("GoalManagement", () => {
     })
 
     it("should serialize goal to JSON format", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -535,7 +557,7 @@ describe("GoalManagement", () => {
       mockFsContext.storedGoal = storedGoal
       setupMockFileSystem(mockFsContext)
 
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -545,7 +567,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle concurrent file operations", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -577,7 +599,7 @@ describe("GoalManagement", () => {
 
   describe("hasActiveGoal - Check Active Goal", () => {
     it("should return true when session has active goal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -589,7 +611,7 @@ describe("GoalManagement", () => {
     })
 
     it("should return false when no goal exists", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -599,7 +621,7 @@ describe("GoalManagement", () => {
     })
 
     it("should return false when goal is completed", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -614,7 +636,7 @@ describe("GoalManagement", () => {
 
   describe("getGoal - Goal Retrieval Alias", () => {
     it("should work as alias for readGoal", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -634,7 +656,7 @@ describe("GoalManagement", () => {
 
   describe("Edge Cases", () => {
     it("should handle goal with special characters in title", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -649,7 +671,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle goal with empty description", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -663,7 +685,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle very long goal title", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -678,7 +700,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle concurrent reads and writes", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -707,7 +729,7 @@ describe("GoalManagement", () => {
 
   describe("Integration Tests", () => {
     it("should complete full goal lifecycle", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -740,7 +762,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle goal overwrite after completion", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -769,7 +791,7 @@ describe("GoalManagement", () => {
 
   describe("Event Handler Tests", () => {
     it("should handle goal_set command event", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -800,7 +822,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle goal_done command event", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -827,7 +849,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle handler with sessionID in properties", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -852,7 +874,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle handler with sessionID in info", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -877,7 +899,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle goal_set with missing title", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -902,7 +924,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle goal_set with missing done_condition", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -926,7 +948,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle goal_done when no goal exists", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -949,7 +971,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle non-goal command events gracefully", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 
@@ -973,7 +995,7 @@ describe("GoalManagement", () => {
     })
 
     it("should handle events without command property", async () => {
-      const goalManagement = createGoalManagement({
+      const goalManagement = createGoalManagement(mockContext, {
         goalsBasePath: mockFsContext.basePath,
       })
 

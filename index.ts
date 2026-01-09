@@ -407,8 +407,10 @@ INSTRUCTIONS:
 
     while (!agentModel || (!agentModel.agent && !agentModel.model && attempts < maxAttempts)) {
       if (attempts > 0) {
-        // Wait between polling attempts
-        await new Promise((resolve) => setTimeout(resolve, 50))
+        // Use shorter delay when no agent/model is available (likely test environment)
+        // This makes tests faster while still providing robustness in production
+        const delay = attempts > 5 ? 50 : 10
+        await new Promise((resolve) => setTimeout(resolve, delay))
       }
 
       // Try the full priority chain (tracked → session.get → session.messages → configured)
@@ -913,6 +915,7 @@ function getGoalFilePath(sessionID: string, basePath: string): string {
  * Create a new goal management instance
  */
 export function createGoalManagement(
+  ctx: PluginContext,
   options: GoalManagementOptions = {}
 ): GoalManagement {
   const { goalsBasePath = GOALS_BASE_PATH } = options
@@ -926,6 +929,12 @@ export function createGoalManagement(
       const goalPath = getGoalFilePath(sessionID, goalsBasePath)
       const fsModule = await fs
       const content = await fsModule.readFile(goalPath, "utf-8")
+      
+      // Handle empty or undefined content
+      if (!content || content.trim() === "") {
+        return null
+      }
+      
       const goal = JSON.parse(content) as Goal
 
       // Validate basic structure
@@ -940,10 +949,20 @@ export function createGoalManagement(
 
       return goal
     } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      // Handle specific error types
+      if (error instanceof Error) {
         // File doesn't exist - no goal set
-        return null
+        if ("code" in error && error.code === "ENOENT") {
+          return null
+        }
+        
+        // JSON parsing error - corrupted file, treat as no goal
+        if (error instanceof SyntaxError) {
+          console.error(`Error reading goal for session ${sessionID}: Invalid JSON format`)
+          return null
+        }
       }
+      
       // Log other errors but return null
       console.error(`Error reading goal for session ${sessionID}:`, error)
       return null
@@ -1061,18 +1080,47 @@ export function createGoalManagement(
   }
 
   const cleanup = async (): Promise<void> => {
-    // Cleanup is handled by file system, no in-memory state to clean
+    // Cleanup is handled by file system for goal files
+    // No persistent file handles or in-memory state to clean
+    // All resources are transient and managed by the file system
   }
 
-  return {
-    readGoal,
-    writeGoal,
-    createGoal,
-    completeGoal,
-    getGoal: readGoal,
-    hasActiveGoal,
-    handler,
-    cleanup,
+    return {
+      readGoal,
+      writeGoal,
+      createGoal,
+      completeGoal,
+      getGoal: readGoal,
+      hasActiveGoal,
+      handler,
+      cleanup,
+    }
   }
-}
+
+  // ============================================================================
+  // Default Export (Plugin Entry Point)
+  // ============================================================================
+
+  /**
+   * Default export function for the agent loop plugin.
+   * Provides simple plugin usage that works with the documented import pattern.
+   * 
+   * @param ctx - PluginContext containing session client and configuration
+   * @returns Object with taskContinuation and goalManagement for event handling
+   */
+  function agentLoopPlugin(ctx: PluginContext) {
+    const goalManagement = createGoalManagement(ctx, {})
+    const taskContinuation = createTaskContinuation(ctx, {
+      goalManagement,
+    })
+
+    return {
+      taskContinuation,
+      goalManagement,
+    }
+  }
+
+  // Export as default for ES modules
+  export default agentLoopPlugin
+
 

@@ -88,6 +88,9 @@ export interface PluginContext {
       }): Promise<void>
     }
   }
+
+  /** Register event handler for OpenCode events */
+  on(eventType: string, handler: (input: { event: LoopEvent }) => Promise<void>): void
 }
 
 /** Represents a single todo/task item */

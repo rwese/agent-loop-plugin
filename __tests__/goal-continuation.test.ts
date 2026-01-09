@@ -3,11 +3,18 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import * as fs from "node:fs/promises"
+import * as path from "node:path"
 import type { PluginContext, Goal, GoalManagement } from "../types.js"
 import { createTaskContinuation, createGoalManagement } from "../index.js"
 
 // Mock the fs module
 vi.mock("node:fs/promises")
+
+// Mock path module for path operations
+vi.mock("node:path", () => ({
+  dirname: vi.fn((p: string) => p.replace(/\/[^/]+$/, "")),
+}))
 
 describe("Goal-Aware Continuation Integration", () => {
   let mockContext: PluginContext
@@ -20,8 +27,20 @@ describe("Goal-Aware Continuation Integration", () => {
       client: {
         session: {
           id: "test-session",
-          get: vi.fn(),
-          messages: vi.fn(),
+          get: vi.fn().mockResolvedValue({ 
+            agent: "test-agent", 
+            model: { providerID: "test", modelID: "test-model" } 
+          }),
+          messages: vi.fn().mockResolvedValue([
+            { 
+              info: { 
+                agent: "test-agent", 
+                model: { providerID: "test", modelID: "test-model" },
+                role: "user" 
+              }, 
+              parts: [] 
+            }
+          ]),
           prompt: vi.fn().mockResolvedValue(undefined),
           todo: vi.fn().mockResolvedValue([]),
         },
@@ -31,8 +50,40 @@ describe("Goal-Aware Continuation Integration", () => {
       },
     } as unknown as PluginContext
 
+    // Setup mock file system operations
+    const sessionGoals = new Map<string, Goal>()
+    
+    vi.mocked(fs.readFile).mockReset()
+    vi.mocked(fs.writeFile).mockReset()
+    vi.mocked(fs.mkdir).mockReset()
+
+    vi.mocked(fs.readFile).mockImplementation(async (filePath, encoding) => {
+      const sessionMatch = (filePath as string).match(/\/([^/]+)\/goal\.json$/)
+      if (sessionMatch) {
+        const sessionId = sessionMatch[1]
+        const goal = sessionGoals.get(sessionId)
+        if (goal) {
+          return JSON.stringify(goal)
+        }
+      }
+      const error = new Error("File not found") as Error & { code: string }
+      error.code = "ENOENT"
+      throw error
+    })
+
+    vi.mocked(fs.writeFile).mockImplementation(async (filePath, data, encoding) => {
+      const sessionMatch = (filePath as string).match(/\/([^/]+)\/goal\.json$/)
+      if (sessionMatch) {
+        const sessionId = sessionMatch[1]
+        const goal = JSON.parse(data as string)
+        sessionGoals.set(sessionId, goal)
+      }
+    })
+
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined)
+
     // Create goal management instance
-    goalManagement = createGoalManagement({
+    goalManagement = createGoalManagement(mockContext, {
       goalsBasePath: "/test/goals",
     })
   })
@@ -50,11 +101,8 @@ describe("Goal-Aware Continuation Integration", () => {
       countdownSeconds: 0.1, // Short countdown for testing
     })
 
-    // Mock session.active to prevent countdown from being cancelled
-    const sessionActiveHandler = taskContinuation.handler
-
     // Simulate session.idle event (should trigger continuation due to active goal)
-    await sessionActiveHandler({
+    await taskContinuation.handler({
       event: {
         type: "session.idle",
         properties: { sessionID: "test-session" },
