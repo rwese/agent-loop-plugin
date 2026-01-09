@@ -13,9 +13,28 @@ const GOAL_GUIDANCE = `
 The agent has an active goal for this session. Use the goal tools to manage it:
 - \`goal_status\` - Check the current goal details
 - \`goal_done\` - Mark the goal as completed when the done condition is met
+- \`goal_validate\` - Validate a completed goal after review
 - \`goal_cancel\` - Cancel the goal if it's no longer relevant
 
 **Remember:** Work toward completing the goal's done condition.
+`;
+
+const VALIDATION_GUIDANCE = `
+## Goal Validation Required
+
+This goal has been marked as completed. Please review and validate it.
+
+**Review Checklist:**
+- ✅ Verify the done condition is satisfied
+- ✅ Confirm the work meets requirements  
+- ✅ Ensure the goal is truly complete
+
+**To Validate:**
+Call: \`goal_validate()\`
+
+If not yet complete, you can:
+- Set a new goal with \`goal_set()\`
+- Continue working on this goal
 `;
 
 /**
@@ -142,6 +161,96 @@ async function getGoalManagement(ctx: PluginContext): Promise<ReturnType<typeof 
     goalManagementInstance = mod.createGoalManagement(ctx, {});
   }
   return goalManagementInstance;
+}
+
+/**
+ * Check if validation prompt was already injected in a session
+ */
+async function hasValidationPrompt(
+  client: PluginContext["client"],
+  sessionID: string
+): Promise<boolean> {
+  try {
+    const existing = await client.session.messages({
+      path: { id: sessionID },
+    });
+
+    if (existing.data) {
+      const messages = existing.data as Array<{ parts?: unknown[]; info?: { parts?: unknown[] } }>;
+      return messages.some((msg) => {
+        const parts = (msg as any).parts || (msg.info as any).parts;
+        if (!parts) return false;
+        return (parts as Array<{ type?: string; text?: string }>).some(
+          (part) => part.type === "text" && part.text?.includes("<goal-validation-prompt>")
+        );
+      });
+    }
+  } catch {
+    // On error, assume no validation prompt exists
+  }
+  return false;
+}
+
+/**
+ * Inject validation prompt for a completed goal
+ */
+export async function injectValidationPrompt(
+  ctx: PluginContext,
+  sessionID: string
+): Promise<void> {
+  try {
+    // Get goal management to get the completed goal
+    const gm = await getGoalManagement(ctx);
+    if (!gm) return;
+
+    const goal = await gm.getGoal(sessionID);
+    if (!goal || goal.status !== "completed") {
+      return;
+    }
+
+    // Check if validation prompt was already injected
+    const hasPrompt = await hasValidationPrompt(ctx.client, sessionID);
+    if (hasPrompt) return;
+
+    const validationPrompt = `<goal-validation-prompt>
+## Goal Validation Required
+
+The goal "${goal.title}" has been marked as completed.
+
+**Done Condition:** ${goal.done_condition}
+${goal.description ? `**Description:** ${goal.description}` : ""}
+
+**Please review and validate this goal.**
+
+**Review Checklist:**
+- ✅ Verify the done condition is satisfied
+- ✅ Confirm the work meets requirements  
+- ✅ Ensure the goal is truly complete
+
+**To Validate:**
+Call: \`goal_validate()\`
+
+If not yet complete, you can:
+- Set a new goal with \`goal_set()\`
+- Continue working on this goal
+</goal-validation-prompt>`;
+
+    // Get session context to preserve model and agent
+    const sessionContext = await getSessionContext(ctx.client, sessionID);
+
+    // Inject validation prompt via noReply + synthetic
+    await ctx.client.session.prompt({
+      path: { id: sessionID },
+      body: {
+        noReply: true,
+        model: sessionContext?.model,
+        agent: sessionContext?.agent,
+        parts: [{ type: "text", text: validationPrompt, synthetic: true }],
+      },
+    });
+  } catch {
+    // Silent skip if validation prompt injection fails
+  }
 }
 
 /**

@@ -11,7 +11,7 @@ import { createLogger, initLogger } from "./logger.js";
 import { createTaskContinuation } from "./goal/continuation.js";
 import { createGoalManagement } from "./goal/management.js";
 import { createGoalTools } from "./tools/goal/index.js";
-import { createGoalContextInjection } from "./goal-context-injection.js";
+import { createGoalContextInjection, injectValidationPrompt } from "./goal-context-injection.js";
 
 const log = createLogger("plugin");
 
@@ -76,6 +76,13 @@ export const agentLoopPlugin: Plugin = async (
       // Handle session compaction for goal context re-injection
       if (event.type === "session.compacted") {
         await goalContext.handleSessionCompacted(event as { properties?: { sessionID?: string } });
+      }
+
+      // Handle goal_done command to inject validation prompt
+      const eventData = event as { type: string; properties?: { info?: { command?: string; sessionID?: string } } };
+      if (eventData.type === "command" && eventData.properties?.info?.command === "goal_done" && eventData.properties.info.sessionID) {
+        // Inject validation prompt after goal is marked as completed
+        await injectValidationPrompt(ctx, eventData.properties.info.sessionID);
       }
 
       // Handle session deletion cleanup

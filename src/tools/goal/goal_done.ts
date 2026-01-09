@@ -41,7 +41,22 @@ export const goal_done = tool({
 
 **Title:** ${completedGoal.title}
 **Completed At:** ${new Date(completedGoal.completed_at!).toLocaleString()}
+${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
+**Done Condition:** ${completedGoal.done_condition}
 
-The goal has been marked as complete.`;
+## Goal Validation Required
+
+The goal has been marked as completed, but requires validation to confirm the done condition has been met.
+
+**Please review:**
+- Have you verified the done condition is satisfied?
+- Does the work meet the requirements?
+- Is the goal truly complete?
+
+**To validate this goal**, call: goal_validate()
+
+If the done condition is not yet met, you can:
+- Set a new goal with goal_set()
+- Continue working on the current goal`;
   },
 });
