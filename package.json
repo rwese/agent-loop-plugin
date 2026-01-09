@@ -34,9 +34,14 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest --watch",
-    "version:patch": "npm version patch && git push && git push --tags",
-    "version:minor": "npm version minor && git push && git push --tags",
-    "version:major": "npm version major && git push && git push --tags"
+    "version:check": "npm version --dry-run",
+    "version:patch": "npm version patch --message 'chore: Bump patch version' && git push && git push --tags",
+    "version:minor": "npm version minor --message 'feat: Bump minor version' && git push && git push --tags",
+    "version:major": "npm version major --message 'BREAKING CHANGE: Major version bump' && git push && git push --tags",
+    "release:patch": "npm run test && npm run lint:fix && npm run build && npm run version:patch",
+    "release:minor": "npm run test && npm run lint:fix && npm run build && npm run version:minor",
+    "release:major": "npm run test && npm run lint:fix && npm run build && npm run version:major",
+    "release": "npm run test && npm run lint:fix && npm run build && git add -A && git commit -m 'chore: Release preparation' && git push"
   },
   "keywords": [
     "opencode",
