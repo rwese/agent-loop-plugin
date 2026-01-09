@@ -19,6 +19,9 @@ export function createGoalManagement(
 ): GoalManagement {
   const { goalsBasePath } = options;
 
+  // Store pending validation sessions
+  const pendingValidation = new Set<string>();
+
   async function readGoalForSession(sessionID: string): Promise<Goal | null> {
     return readGoal(sessionID, goalsBasePath);
   }
@@ -49,8 +52,10 @@ export function createGoalManagement(
 
   async function markGoalComplete(sessionID: string): Promise<Goal | null> {
     const goal = await readGoalForSession(sessionID);
+    console.log("🎯 GOAL MGMT: markGoalComplete called for session:", sessionID, "goal found:", !!goal);
 
     if (!goal) {
+      console.log("🎯 GOAL MGMT: No goal found for session:", sessionID);
       return null;
     }
 
@@ -61,6 +66,12 @@ export function createGoalManagement(
     };
 
     await writeGoalForSession(sessionID, completedGoal);
+    console.log("🎯 GOAL MGMT: Goal completed for session:", sessionID, "title:", goal.title);
+    
+    // Mark this session as pending validation
+    pendingValidation.add(sessionID);
+    console.log("🎯 GOAL MGMT: Added session to pending validation, total:", pendingValidation.size);
+    
     return completedGoal;
   }
 
@@ -157,6 +168,14 @@ export function createGoalManagement(
     log.debug("Goal management cleanup completed");
   };
 
+  async function checkPendingValidation(sessionID: string): Promise<boolean> {
+    return pendingValidation.has(sessionID);
+  }
+
+  async function clearPendingValidation(sessionID: string): Promise<void> {
+    pendingValidation.delete(sessionID);
+  }
+
   return {
     readGoal: readGoalForSession,
     writeGoal: writeGoalForSession,
@@ -165,6 +184,8 @@ export function createGoalManagement(
     validateGoal: validateCompletedGoal,
     getGoal: readGoalForSession,
     hasActiveGoal: checkActiveGoal,
+    checkPendingValidation,
+    clearPendingValidation,
     handler,
     cleanup,
   };

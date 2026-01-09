@@ -227,6 +227,10 @@ export interface GoalManagement {
   getGoal: (sessionID: string) => Promise<Goal | null>;
   /** Check if a session has an active (non-completed) goal */
   hasActiveGoal: (sessionID: string) => Promise<boolean>;
+  /** Check if a session has a goal pending validation */
+  checkPendingValidation: (sessionID: string) => Promise<boolean>;
+  /** Clear the pending validation flag for a session */
+  clearPendingValidation: (sessionID: string) => Promise<void>;
   /** Event handler for session events */
   handler: (input: { event: LoopEvent }) => Promise<void>;
   /** Cleanup session state */

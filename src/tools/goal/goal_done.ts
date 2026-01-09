@@ -1,4 +1,5 @@
 import { tool, type ToolContext } from "@opencode-ai/plugin/tool"
+import type { PluginContext } from "../../types.js"
 import { createGoalManagement } from "../../goal/management.js"
 
 const DESCRIPTION = `Goal Completion Tool
@@ -21,6 +22,12 @@ goal_done()
 - Use this to formally close out a goal
 - The completed goal can still be viewed via goal_status
 - Consider setting a new goal after completion`
+
+let pluginContext: PluginContext | null = null
+
+export function setPluginContext(ctx: PluginContext) {
+  pluginContext = ctx
+}
 
 export const goal_done = tool({
   description: DESCRIPTION,
@@ -67,24 +74,29 @@ If the done condition is not yet met, you can:
 - Set a new goal with \`goal_set()\`
 - Continue working on the current goal`
 
-    // Try to prompt the agent for validation
+    // Try to prompt the agent for validation using plugin context
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const client = (context as any).client
-      if (client?.session?.prompt) {
-        await client.session.prompt({
+      if (pluginContext?.client?.session?.prompt) {
+        console.log("🎯 GOAL_DONE: Injecting validation prompt using plugin context");
+        await pluginContext.client.session.prompt({
           path: { id: sessionID },
           body: {
             agent: context.agent,
             parts: [{ type: "text", text: validationPrompt, synthetic: true }],
           },
         })
+        console.log("🎯 GOAL_DONE: Validation prompt injected successfully");
+      } else {
+        console.log("🎯 GOAL_DONE: Plugin context not available, cannot inject prompt");
+        console.log("🎯 GOAL_DONE: Has pluginContext:", !!pluginContext);
+        console.log("🎯 GOAL_DONE: Has client:", !!(pluginContext as any)?.client);
+        console.log("🎯 GOAL_DONE: Has session.prompt:", !!(pluginContext as any)?.client?.session?.prompt);
       }
     } catch (error) {
       // Log error but don't fail the goal completion
       console.error("Failed to inject validation prompt:", error);
     }
 
-    return completionMessage
+    return completionMessage + "\n\n[TEST MARKER: goal_done executed successfully]"
   },
 })
