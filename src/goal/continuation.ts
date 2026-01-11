@@ -12,30 +12,30 @@ import type {
   LoopEvent,
   Goal,
   ModelSpec,
-} from "../types.js";
-import { createLogger } from "../logger.js";
+} from "../types.js"
+import { createLogger } from "../logger.js"
 
-const log = createLogger("task-continuation");
+const log = createLogger("task-continuation")
 
 /**
  * Get incomplete todos from a list
  */
 function getIncompleteTodos(todos: Todo[]): Todo[] {
-  return todos.filter((t) => t.status !== "completed" && t.status !== "cancelled");
+  return todos.filter((t) => t.status !== "completed" && t.status !== "cancelled")
 }
 
 /**
  * Get count of incomplete todos
  */
 function getIncompleteCount(todos: Todo[]): number {
-  return getIncompleteTodos(todos).length;
+  return getIncompleteTodos(todos).length
 }
 
 /**
  * Build continuation prompt for incomplete todos
  */
 function buildContinuationPrompt(todos: Todo[]): string {
-  const pending = getIncompleteTodos(todos);
+  const pending = getIncompleteTodos(todos)
 
   return `[SYSTEM - AUTO-CONTINUATION]
 
@@ -50,7 +50,7 @@ INSTRUCTIONS:
 1. Pick the next pending task and execute it immediately
 2. Use todowrite to mark it "in_progress" then "completed" when done
 3. Continue until all tasks are complete
-4. MUST work independently - you can solve everything without asking for permission.`;
+4. MUST work independently - you can solve everything without asking for permission.`
 }
 
 /**
@@ -59,7 +59,7 @@ INSTRUCTIONS:
 function checkInterruption(error: unknown): { isInterruption: boolean; message: string } {
   // Handle standard Error instances
   if (error instanceof Error) {
-    const message = error.message ?? "";
+    const message = error.message ?? ""
     const isInterrupt =
       message.includes("aborted") ||
       message.includes("cancelled") ||
@@ -74,22 +74,27 @@ function checkInterruption(error: unknown): { isInterruption: boolean; message: 
       error.name === "AbortError" ||
       error.name === "CancellationError" ||
       error.name === "ExitError" ||
-      error.name === "TerminateError";
+      error.name === "TerminateError"
 
     return {
       isInterruption: isInterrupt,
       message,
-    };
+    }
   }
 
   // Handle object structures
   if (typeof error === "object" && error !== null) {
-    const errorObj = error as { name?: string; data?: { message?: string }; code?: string; signal?: string };
-    const name = errorObj.name ?? "";
-    const errorMessage = errorObj.data?.message ?? "";
-    const code = errorObj.code ?? "";
-    const signal = errorObj.signal ?? "";
-    const message = errorMessage || name || code || signal || "Object error";
+    const errorObj = error as {
+      name?: string
+      data?: { message?: string }
+      code?: string
+      signal?: string
+    }
+    const name = errorObj.name ?? ""
+    const errorMessage = errorObj.data?.message ?? ""
+    const code = errorObj.code ?? ""
+    const signal = errorObj.signal ?? ""
+    const message = errorMessage || name || code || signal || "Object error"
     const isInterrupt =
       name.includes("Abort") ||
       name.includes("Cancel") ||
@@ -108,27 +113,27 @@ function checkInterruption(error: unknown): { isInterruption: boolean; message: 
       errorMessage.includes("canceled") ||
       errorMessage.includes("interrupted") ||
       errorMessage.includes("stopped") ||
-      errorMessage.includes("terminated");
+      errorMessage.includes("terminated")
 
     return {
       isInterruption: isInterrupt,
       message,
-    };
+    }
   }
 
   return {
     isInterruption: false,
     message: String(error),
-  };
+  }
 }
 
 /**
  * Check if a message represents user cancellation
  */
 function checkMessageCancellation(message: string): boolean {
-  if (!message || typeof message !== "string") return false;
+  if (!message || typeof message !== "string") return false
 
-  const lowerMessage = message.toLowerCase();
+  const lowerMessage = message.toLowerCase()
   const cancellationPatterns = [
     /cancel\s+(this\s+)?(task|goal|operation|execution)/i,
     /stop\s+(this\s+)?(task|goal|operation|execution)/i,
@@ -150,9 +155,9 @@ function checkMessageCancellation(message: string): boolean {
     /actually,\s+stop/i,
     /wait,\s+cancel/i,
     /wait,\s+stop/i,
-  ];
+  ]
 
-  return cancellationPatterns.some(pattern => pattern.test(lowerMessage));
+  return cancellationPatterns.some((pattern) => pattern.test(lowerMessage))
 }
 
 /**
@@ -169,28 +174,28 @@ export function createTaskContinuation(
     agent,
     model,
     goalManagement,
-  } = options;
+  } = options
 
   // Track sessions and state
-  const recoveringSessions = new Set<string>();
-  const errorCooldowns = new Map<string, number>();
-  const pendingCountdowns = new Map<string, ReturnType<typeof setTimeout>>();
-  const lastProcessedMessageID = new Map<string, string>();
-  const sessionAgentModel = new Map<string, { agent?: string; model?: string | ModelSpec }>();
+  const recoveringSessions = new Set<string>()
+  const errorCooldowns = new Map<string, number>()
+  const pendingCountdowns = new Map<string, ReturnType<typeof setTimeout>>()
+  const lastProcessedMessageID = new Map<string, string>()
+  const sessionAgentModel = new Map<string, { agent?: string; model?: string | ModelSpec }>()
 
   async function fetchTodos(sessionID: string): Promise<Todo[]> {
     try {
-      const response = await ctx.client.session.todo({ path: { id: sessionID } });
-      const todos = Array.isArray(response) ? response : (response.data ?? []);
+      const response = await ctx.client.session.todo({ path: { id: sessionID } })
+      const todos = Array.isArray(response) ? response : (response.data ?? [])
       // Ensure todos match our Todo interface
-      return todos.map(todo => ({
+      return todos.map((todo) => ({
         id: todo.id,
         content: todo.content,
         status: todo.status as "pending" | "in_progress" | "completed" | "cancelled",
-        priority: todo.priority
-      }));
+        priority: todo.priority,
+      }))
     } catch {
-      return [];
+      return []
     }
   }
 
@@ -199,22 +204,29 @@ export function createTaskContinuation(
   ): Promise<{ agent?: string; model?: string | { providerID: string; modelID: string } } | null> {
     try {
       if (typeof ctx.client.session.get === "function") {
-        const sessionInfo = await ctx.client.session.get({ path: { id: sessionID } });
-        
+        const sessionInfo = await ctx.client.session.get({ path: { id: sessionID } })
+
         // Handle the response structure - extract from data property if present
-        const sessionData = (sessionInfo as { data?: { agent?: string; model?: string | { providerID: string; modelID: string } } }).data;
-        const sessionObj = sessionInfo as { agent?: string; model?: string | { providerID: string; modelID: string } };
-        const agent = sessionData?.agent || sessionObj.agent;
-        const model = sessionData?.model || sessionObj.model;
+        const sessionData = (
+          sessionInfo as {
+            data?: { agent?: string; model?: string | { providerID: string; modelID: string } }
+          }
+        ).data
+        const sessionObj = sessionInfo as {
+          agent?: string
+          model?: string | { providerID: string; modelID: string }
+        }
+        const agent = sessionData?.agent || sessionObj.agent
+        const model = sessionData?.model || sessionObj.model
 
         if (agent || model) {
-          return { agent, model };
+          return { agent, model }
         }
       }
     } catch {
-      log.debug("Exception calling session.get", { sessionID });
+      log.debug("Exception calling session.get", { sessionID })
     }
-    return null;
+    return null
   }
 
   async function fetchAgentModelFromMessages(
@@ -222,29 +234,29 @@ export function createTaskContinuation(
   ): Promise<{ agent?: string; model?: string | ModelSpec } | null> {
     try {
       if (typeof ctx.client.session.messages !== "function") {
-        return null;
+        return null
       }
 
-      const messagesResponse = await ctx.client.session.messages({ path: { id: sessionID } });
+      const messagesResponse = await ctx.client.session.messages({ path: { id: sessionID } })
 
       if (Array.isArray(messagesResponse)) {
         for (const msg of messagesResponse) {
           const msgInfo = (
             msg as { info?: { agent?: string; model?: string | ModelSpec; role?: string } }
-          ).info;
+          ).info
 
           if (msgInfo?.agent || msgInfo?.model) {
             return {
               agent: msgInfo.agent,
               model: msgInfo.model,
-            };
+            }
           }
         }
       }
     } catch {
-      log.debug("Error fetching messages for agent/model", { sessionID });
+      log.debug("Error fetching messages for agent/model", { sessionID })
     }
-    return null;
+    return null
   }
 
   function updateSessionAgentModel(
@@ -256,81 +268,81 @@ export function createTaskContinuation(
       sessionAgentModel.set(sessionID, {
         agent: eventAgent,
         model: eventModel,
-      });
+      })
     }
   }
 
   async function getAgentModel(sessionID: string): Promise<{
-    agent?: string | undefined;
-    model?: string | { providerID: string; modelID: string } | undefined;
+    agent?: string | undefined
+    model?: string | { providerID: string; modelID: string } | undefined
   }> {
-    const tracked = sessionAgentModel.get(sessionID);
+    const tracked = sessionAgentModel.get(sessionID)
     if (tracked && (tracked.agent || tracked.model)) {
-      return tracked;
+      return tracked
     }
 
-    const sessionInfo = await fetchSessionInfo(sessionID);
+    const sessionInfo = await fetchSessionInfo(sessionID)
     if (sessionInfo && (sessionInfo.agent || sessionInfo.model)) {
-      return sessionInfo;
+      return sessionInfo
     }
 
-    const messagesInfo = await fetchAgentModelFromMessages(sessionID);
+    const messagesInfo = await fetchAgentModelFromMessages(sessionID)
     if (messagesInfo && (messagesInfo.agent || messagesInfo.model)) {
-      return messagesInfo;
+      return messagesInfo
     }
 
-    return { agent: agent ?? undefined, model: model ?? undefined };
+    return { agent: agent ?? undefined, model: model ?? undefined }
   }
 
   async function injectContinuation(sessionID: string): Promise<void> {
-    log.debug("injectContinuation called", { sessionID });
+    log.debug("injectContinuation called", { sessionID })
 
     // Clear any pending countdown
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      pendingCountdowns.delete(sessionID);
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
     }
 
-    const todos = await fetchTodos(sessionID);
-    const incompleteCount = getIncompleteCount(todos);
+    const todos = await fetchTodos(sessionID)
+    const incompleteCount = getIncompleteCount(todos)
 
     log.debug("Checking todos for continuation", {
       sessionID,
       totalTodos: todos.length,
       incompleteCount,
-    });
+    })
 
     // Check for active goals
-    let activeGoal: Goal | null = null;
-    let hasActiveGoal = false;
+    let activeGoal: Goal | null = null
+    let hasActiveGoal = false
     if (goalManagement) {
-      activeGoal = await goalManagement.getGoal(sessionID);
-      hasActiveGoal = activeGoal !== null && activeGoal.status === "active";
+      activeGoal = await goalManagement.getGoal(sessionID)
+      hasActiveGoal = activeGoal !== null && activeGoal.status === "active"
       log.debug("Checking goals for continuation", {
         sessionID,
         hasGoal: activeGoal !== null,
         goalStatus: activeGoal?.status,
         goalTitle: activeGoal?.title,
-      });
+      })
     }
 
     // Continue if there are incomplete todos OR active goals
     if (incompleteCount === 0 && !hasActiveGoal) {
-      log.debug("No incomplete tasks or active goals, skipping continuation", { sessionID });
-      return;
+      log.debug("No incomplete tasks or active goals, skipping continuation", { sessionID })
+      return
     }
 
     // Build combined continuation prompt
-    let prompt = "";
+    let prompt = ""
 
     if (incompleteCount > 0) {
-      prompt += buildContinuationPrompt(todos);
+      prompt += buildContinuationPrompt(todos)
     }
 
     if (hasActiveGoal && activeGoal) {
       if (prompt.length > 0) {
-        prompt += "\n\n";
+        prompt += "\n\n"
       }
       prompt += `[SYSTEM - GOAL CONTINUATION]
 
@@ -342,48 +354,50 @@ INSTRUCTIONS:
 
 1. Focus on completing the active goal above
 2. Use goal_done when the goal's done condition is met
-3. Work independently - you can solve everything without asking for permission.`;
+3. Work independently - you can solve everything without asking for permission.`
     }
 
     // Get agent/model with polling
     let agentModel: {
-      agent?: string | undefined;
-      model?: string | { providerID: string; modelID: string } | undefined;
-    } | null = null;
-    let attempts = 0;
-    const maxAttempts = 10;
+      agent?: string | undefined
+      model?: string | { providerID: string; modelID: string } | undefined
+    } | null = null
+    let attempts = 0
+    const maxAttempts = 10
 
     while (!agentModel || (!agentModel.agent && !agentModel.model && attempts < maxAttempts)) {
       if (attempts > 0) {
-        const delay = attempts > 5 ? 50 : 10;
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        const delay = attempts > 5 ? 50 : 10
+        await new Promise((resolve) => setTimeout(resolve, delay))
       }
 
-      agentModel = await getAgentModel(sessionID);
+      agentModel = await getAgentModel(sessionID)
 
       if (agentModel && (agentModel.agent || agentModel.model)) {
-        break;
+        break
       }
 
-      attempts++;
+      attempts++
       log.debug("Polling for agent/model", {
         sessionID,
         attempt: attempts,
         maxAttempts,
         hasAgent: !!agentModel?.agent,
         hasModel: !!agentModel?.model,
-      });
+      })
     }
 
-    const continuationAgent = agentModel?.agent;
-    const continuationModel = agentModel?.model as { providerID: string; modelID: string } | undefined;
+    const continuationAgent = agentModel?.agent
+    const continuationModel = agentModel?.model as
+      | { providerID: string; modelID: string }
+      | undefined
 
     log.debug("Injecting continuation prompt", {
       sessionID,
       agent: continuationAgent,
       model: continuationModel,
       promptLength: prompt.length,
-    });
+    })
 
     try {
       await ctx.client.session.prompt({
@@ -394,38 +408,38 @@ INSTRUCTIONS:
           parts: [{ type: "text", text: prompt }],
         },
         query: { directory: ctx.directory },
-      });
+      })
 
-      log.debug("Continuation prompt injected successfully", { sessionID });
+      log.debug("Continuation prompt injected successfully", { sessionID })
     } catch (error) {
       log.error(`Failed to inject continuation for session ${sessionID}`, {
         error: error instanceof Error ? error.message : String(error),
-      });
+      })
     }
   }
 
   async function scheduleContinuation(sessionID: string): Promise<void> {
     // Clear any existing countdown
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
+      clearTimeout(existingTimeout)
     }
 
     // Schedule new countdown
     const timeout = setTimeout(async () => {
-      pendingCountdowns.delete(sessionID);
+      pendingCountdowns.delete(sessionID)
       try {
-        log.debug("Countdown timer fired, injecting continuation", { sessionID });
-        await injectContinuation(sessionID);
+        log.debug("Countdown timer fired, injecting continuation", { sessionID })
+        await injectContinuation(sessionID)
       } catch (error) {
         log.error(`Error in continuation timeout callback for session ${sessionID}`, {
           error: error instanceof Error ? error.message : String(error),
-        });
+        })
       }
-    }, countdownSeconds * 1000);
+    }, countdownSeconds * 1000)
 
-    pendingCountdowns.set(sessionID, timeout);
-    log.debug("Countdown timer scheduled", { sessionID, countdownSeconds });
+    pendingCountdowns.set(sessionID, timeout)
+    log.debug("Countdown timer scheduled", { sessionID, countdownSeconds })
 
     // Show toast notification
     try {
@@ -436,7 +450,7 @@ INSTRUCTIONS:
           variant: "info",
           duration: toastDurationMs,
         },
-      });
+      })
     } catch {
       // Ignore toast errors
     }
@@ -445,62 +459,62 @@ INSTRUCTIONS:
   const handleSessionIdle = async (sessionID: string): Promise<void> => {
     // Check if session is recovering
     if (recoveringSessions.has(sessionID)) {
-      return;
+      return
     }
 
     // Check error cooldown
-    const lastError = errorCooldowns.get(sessionID) ?? 0;
+    const lastError = errorCooldowns.get(sessionID) ?? 0
     if (Date.now() - lastError < errorCooldownMs) {
-      return;
+      return
     }
 
-    const todos = await fetchTodos(sessionID);
-    const incompleteCount = getIncompleteCount(todos);
+    const todos = await fetchTodos(sessionID)
+    const incompleteCount = getIncompleteCount(todos)
 
     log.debug("Session idle - checking todos", {
       sessionID,
       totalTodos: todos.length,
       incompleteCount,
-    });
+    })
 
     // Check for active goals
-    let hasActiveGoal = false;
+    let hasActiveGoal = false
     if (goalManagement) {
-      const goal = await goalManagement.getGoal(sessionID);
-      hasActiveGoal = goal !== null && goal.status === "active";
+      const goal = await goalManagement.getGoal(sessionID)
+      hasActiveGoal = goal !== null && goal.status === "active"
       log.debug("Session idle - checking goals", {
         sessionID,
         hasGoal: goal !== null,
         goalStatus: goal?.status,
         goalTitle: goal?.title,
-      });
+      })
     }
 
     // Continue if there are incomplete todos OR active goals
     if (incompleteCount === 0 && !hasActiveGoal) {
-      return;
+      return
     }
 
-    scheduleContinuation(sessionID);
-  };
+    scheduleContinuation(sessionID)
+  }
 
   const handleSessionError = async (sessionID: string, event?: LoopEvent): Promise<void> => {
     // Clear any pending countdown
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      pendingCountdowns.delete(sessionID);
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
     }
 
     // Set error cooldown
-    errorCooldowns.set(sessionID, Date.now());
+    errorCooldowns.set(sessionID, Date.now())
 
     // Check for interruption
-    const error = event?.properties?.error;
-    const { isInterruption } = checkInterruption(error);
+    const error = event?.properties?.error
+    const { isInterruption } = checkInterruption(error)
 
     if (isInterruption) {
-      log.debug("Session interruption detected", { sessionID });
+      log.debug("Session interruption detected", { sessionID })
 
       try {
         await ctx.client.tui.showToast({
@@ -510,65 +524,70 @@ INSTRUCTIONS:
             variant: "warning",
             duration: 2000,
           },
-        });
+        })
       } catch {
         // Ignore toast errors
       }
     }
-  };
+  }
 
   const handleUserMessage = async (sessionID: string, event?: LoopEvent): Promise<void> => {
-    log.debug("handleUserMessage called", { sessionID, eventType: event?.type });
+    log.debug("handleUserMessage called", { sessionID, eventType: event?.type })
 
     // Clear error cooldown on user message
-    errorCooldowns.delete(sessionID);
+    errorCooldowns.delete(sessionID)
 
     // Check for interruption in message
-    const info = event?.properties?.info;
-    const messageError = (info as { error?: unknown })?.error;
+    const info = event?.properties?.info
+    const messageError = (info as { error?: unknown })?.error
     if (messageError) {
-      const { isInterruption } = checkInterruption(messageError);
+      const { isInterruption } = checkInterruption(messageError)
       if (isInterruption) {
-        const existingTimeout = pendingCountdowns.get(sessionID);
+        const existingTimeout = pendingCountdowns.get(sessionID)
         if (existingTimeout) {
-          clearTimeout(existingTimeout);
-          pendingCountdowns.delete(sessionID);
+          clearTimeout(existingTimeout)
+          pendingCountdowns.delete(sessionID)
         }
-        errorCooldowns.set(sessionID, Date.now());
-        log.debug("Message interruption detected", { sessionID });
+        errorCooldowns.set(sessionID, Date.now())
+        log.debug("Message interruption detected", { sessionID })
       }
     }
 
     // Check for new user message to cancel countdown
-    const messageID = (info as { id?: string })?.id;
-    const role = (info as { role?: string })?.role;
-    const summary = (info as { summary?: unknown })?.summary;
-    const messageContent = (info as { content?: string; text?: string; message?: string })?.content ||
-                          (info as { content?: string; text?: string; message?: string })?.text ||
-                          (info as { content?: string; text?: string; message?: string })?.message;
+    const messageID = (info as { id?: string })?.id
+    const role = (info as { role?: string })?.role
+    const summary = (info as { summary?: unknown })?.summary
+    const messageContent =
+      (info as { content?: string; text?: string; message?: string })?.content ||
+      (info as { content?: string; text?: string; message?: string })?.text ||
+      (info as { content?: string; text?: string; message?: string })?.message
 
     if (messageID) {
-      const lastProcessed = lastProcessedMessageID.get(sessionID);
+      const lastProcessed = lastProcessedMessageID.get(sessionID)
       if (lastProcessed !== messageID) {
-        lastProcessedMessageID.set(sessionID, messageID);
+        lastProcessedMessageID.set(sessionID, messageID)
 
         if (role === "user" && !summary) {
-          const existingTimeout = pendingCountdowns.get(sessionID);
+          const existingTimeout = pendingCountdowns.get(sessionID)
           if (existingTimeout) {
-            clearTimeout(existingTimeout);
-            pendingCountdowns.delete(sessionID);
-            log.debug("New user message cancelled pending countdown", { sessionID, messageID });
+            clearTimeout(existingTimeout)
+            pendingCountdowns.delete(sessionID)
+            log.debug("New user message cancelled pending countdown", { sessionID, messageID })
           }
 
           // Check if the message indicates user cancellation
           if (messageContent && checkMessageCancellation(messageContent)) {
-            const cancelTimeout = pendingCountdowns.get(sessionID);
+            const cancelTimeout = pendingCountdowns.get(sessionID)
             if (cancelTimeout) {
-              clearTimeout(cancelTimeout);
-              pendingCountdowns.delete(sessionID);
+              clearTimeout(cancelTimeout)
+              pendingCountdowns.delete(sessionID)
             }
-            errorCooldowns.set(sessionID, Date.now());
-            log.debug("User cancellation detected in message", { sessionID, messageID, content: messageContent.substring(0, 100) });
+            errorCooldowns.set(sessionID, Date.now())
+            log.debug("User cancellation detected in message", {
+              sessionID,
+              messageID,
+              content: messageContent.substring(0, 100),
+            })
 
             try {
               await ctx.client.tui.showToast({
@@ -578,7 +597,7 @@ INSTRUCTIONS:
                   variant: "warning",
                   duration: 2000,
                 },
-              });
+              })
             } catch {
               // Ignore toast errors
             }
@@ -589,65 +608,65 @@ INSTRUCTIONS:
 
     // Capture agent/model from user message
     if (event?.properties?.info) {
-      const msgInfo = event.properties.info;
-      const messageAgent = (msgInfo as { agent?: string }).agent;
-      const messageModel = (msgInfo as { model?: string | ModelSpec }).model;
+      const msgInfo = event.properties.info
+      const messageAgent = (msgInfo as { agent?: string }).agent
+      const messageModel = (msgInfo as { model?: string | ModelSpec }).model
 
       if (messageAgent || messageModel) {
         log.debug("Captured agent/model from message", {
           sessionID,
           agent: messageAgent,
           model: messageModel,
-        });
-        updateSessionAgentModel(sessionID, messageAgent, messageModel);
+        })
+        updateSessionAgentModel(sessionID, messageAgent, messageModel)
       }
     }
-  };
+  }
 
   const handleSessionDeleted = async (sessionID: string): Promise<void> => {
     // Cleanup session state
-    recoveringSessions.delete(sessionID);
-    errorCooldowns.delete(sessionID);
-    sessionAgentModel.delete(sessionID);
-    lastProcessedMessageID.delete(sessionID);
+    recoveringSessions.delete(sessionID)
+    errorCooldowns.delete(sessionID)
+    sessionAgentModel.delete(sessionID)
+    lastProcessedMessageID.delete(sessionID)
 
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      pendingCountdowns.delete(sessionID);
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
     }
-  };
+  }
 
   const handleSessionActive = async (sessionID: string): Promise<void> => {
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      pendingCountdowns.delete(sessionID);
-      log.debug("Session became active, cancelled pending countdown", { sessionID });
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+      log.debug("Session became active, cancelled pending countdown", { sessionID })
     }
-  };
+  }
 
   const handleSessionBusy = async (sessionID: string): Promise<void> => {
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      pendingCountdowns.delete(sessionID);
-      log.debug("Session became busy, cancelled pending countdown", { sessionID });
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+      log.debug("Session became busy, cancelled pending countdown", { sessionID })
     }
-  };
+  }
 
   const handleSessionCancelled = async (sessionID: string): Promise<void> => {
     // Clear any pending countdown
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      pendingCountdowns.delete(sessionID);
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
     }
 
     // Set error cooldown to prevent immediate continuation
-    errorCooldowns.set(sessionID, Date.now());
+    errorCooldowns.set(sessionID, Date.now())
 
-    log.debug("Session cancellation detected, stopping continuation", { sessionID });
+    log.debug("Session cancellation detected, stopping continuation", { sessionID })
 
     try {
       await ctx.client.tui.showToast({
@@ -657,104 +676,104 @@ INSTRUCTIONS:
           variant: "warning",
           duration: 2000,
         },
-      });
+      })
     } catch {
       // Ignore toast errors
     }
-  };
+  }
 
   const handleSessionStatus = async (sessionID: string, event?: LoopEvent): Promise<void> => {
-    const status = event?.properties?.status;
+    const status = event?.properties?.status
     if (
       status &&
       typeof status === "object" &&
       "type" in status &&
       (status as { type?: string }).type === "idle"
     ) {
-      const lastError = errorCooldowns.get(sessionID) ?? 0;
-      const recentError = Date.now() - lastError < 5000;
+      const lastError = errorCooldowns.get(sessionID) ?? 0
+      const recentError = Date.now() - lastError < 5000
 
       if (recentError) {
         log.debug("Session returned to idle after recent error, skipping continuation", {
           sessionID,
           timeSinceError: Date.now() - lastError,
-        });
-        return;
+        })
+        return
       }
     }
-  };
+  }
 
   function extractSessionID(event: LoopEvent): string | undefined {
-    const props = event.properties;
-    if (props?.sessionID && typeof props.sessionID === "string") return props.sessionID;
+    const props = event.properties
+    if (props?.sessionID && typeof props.sessionID === "string") return props.sessionID
     if (props?.info?.sessionID && typeof props.info.sessionID === "string")
-      return props.info.sessionID;
-    if (props?.info?.id && typeof props.info.id === "string") return props.info.id;
-    return undefined;
+      return props.info.sessionID
+    if (props?.info?.id && typeof props.info.id === "string") return props.info.id
+    return undefined
   }
 
   const handler = async ({ event }: { event: LoopEvent }): Promise<void> => {
-    const sessionID = extractSessionID(event);
-    if (!sessionID) return;
+    const sessionID = extractSessionID(event)
+    if (!sessionID) return
 
     switch (event.type) {
       case "session.idle":
-        await handleSessionIdle(sessionID);
-        break;
+        await handleSessionIdle(sessionID)
+        break
       case "session.error":
-        await handleSessionError(sessionID, event);
-        break;
+        await handleSessionError(sessionID, event)
+        break
       case "session.status":
-        await handleSessionStatus(sessionID, event);
-        break;
+        await handleSessionStatus(sessionID, event)
+        break
       case "message.updated":
-        await handleUserMessage(sessionID, event);
-        break;
+        await handleUserMessage(sessionID, event)
+        break
       case "session.deleted":
-        await handleSessionDeleted(sessionID);
-        break;
+        await handleSessionDeleted(sessionID)
+        break
       case "session.active":
-        await handleSessionActive(sessionID);
-        break;
+        await handleSessionActive(sessionID)
+        break
       case "session.busy":
-        await handleSessionBusy(sessionID);
-        break;
+        await handleSessionBusy(sessionID)
+        break
       case "session.cancelled":
-        await handleSessionCancelled(sessionID);
-        break;
+        await handleSessionCancelled(sessionID)
+        break
     }
-  };
+  }
 
   const markRecovering = (sessionID: string): void => {
-    recoveringSessions.add(sessionID);
-  };
+    recoveringSessions.add(sessionID)
+  }
 
   const markRecoveryComplete = (sessionID: string): void => {
-    recoveringSessions.delete(sessionID);
-  };
+    recoveringSessions.delete(sessionID)
+  }
 
   const cancel = (sessionID: string): void => {
-    const existingTimeout = pendingCountdowns.get(sessionID);
+    const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      pendingCountdowns.delete(sessionID);
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
     }
 
-    errorCooldowns.delete(sessionID);
-    recoveringSessions.delete(sessionID);
-  };
+    errorCooldowns.delete(sessionID)
+    recoveringSessions.delete(sessionID)
+  }
 
   const cleanup = async (): Promise<void> => {
     for (const timeout of pendingCountdowns.values()) {
-      clearTimeout(timeout);
+      clearTimeout(timeout)
     }
-    pendingCountdowns.clear();
-    recoveringSessions.clear();
-    errorCooldowns.clear();
-    sessionAgentModel.clear();
-    lastProcessedMessageID.clear();
-    log.debug("Task continuation cleanup completed");
-  };
+    pendingCountdowns.clear()
+    recoveringSessions.clear()
+    errorCooldowns.clear()
+    sessionAgentModel.clear()
+    lastProcessedMessageID.clear()
+    log.debug("Task continuation cleanup completed")
+  }
 
   return {
     handler,
@@ -762,5 +781,6 @@ INSTRUCTIONS:
     markRecoveryComplete,
     cancel,
     cleanup,
-  };
+  }
 }
+
