@@ -552,4 +552,18 @@ describe("TaskContinuation", () => {
     // Countdown should have fired despite multiple message updates
     expect(ctx.client.session.prompt).toHaveBeenCalled()
   })
+
+  it("should not inject continuation when todo list is empty", async () => {
+    const ctx = createMockContext()
+    const mockTodoFn = ctx.client.session.todo as unknown as {
+      mockResolvedValue: (val: Todo[]) => void
+    }
+    mockTodoFn.mockResolvedValue([])
+
+    const taskContinuation = createTaskContinuation(ctx)
+    await taskContinuation.handler({ event: createIdleEvent("session-empty") })
+
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(ctx.client.session.prompt).not.toHaveBeenCalled()
+  })
 })
