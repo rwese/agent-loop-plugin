@@ -8,17 +8,14 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 import { goal_set } from "./goal_set.js";
 import { goal_status } from "./goal_status.js";
-import { goal_done, setPluginContext as setGoalDoneContext } from "./goal_done.js";
+import { goal_done } from "./goal_done.js";
 import { goal_cancel } from "./goal_cancel.js";
 import { goal_validate } from "./goal_validate.js";
 
 /**
  * Create goal tool handlers bound to a plugin context
  */
-export function createGoalTools(ctx: PluginInput) {
-  // Set the plugin context for goal tools that need access to client
-  setGoalDoneContext(ctx as any);
-  
+export function createGoalTools(_ctx: PluginInput) {
   return {
     /**
      * goal_set - Set a new goal for the current session

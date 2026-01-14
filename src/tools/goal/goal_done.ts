@@ -1,7 +1,5 @@
 import { tool, type ToolContext } from "@opencode-ai/plugin/tool"
-import type { PluginContext } from "../../types.js"
 import { createGoalManagement } from "../../goal/management.js"
-import { promptWithContext } from "../../session-context.js"
 
 const DESCRIPTION = `Goal Completion Tool
 
@@ -23,12 +21,6 @@ goal_done()
 - Use this to formally close out a goal
 - The completed goal can still be viewed via goal_status
 - Consider setting a new goal after completion`
-
-let pluginContext: PluginContext | null = null
-
-export function setPluginContext(ctx: PluginContext) {
-  pluginContext = ctx
-}
 
 export const goal_done = tool({
   description: DESCRIPTION,
@@ -53,53 +45,15 @@ export const goal_done = tool({
 ${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
 **Done Condition:** ${completedGoal.done_condition}
 
-The goal is now pending validation. An agent will review and validate it when the session becomes idle.
+The goal is now pending validation. 
 
-To validate, call: goal_validate()
+**Next Steps:**
+1. Review the completed work
+2. Verify the done condition is satisfied  
+3. Call goal_validate() to validate this goal
 
 Or set a new goal with: goal_set()`
 
-    // Try to trigger validation prompt injection immediately if possible
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const client = (context as any).client
-      if (client?.session?.prompt && pluginContext) {
-        // Get the goal for validation prompt
-        const goalForValidation = await gm.getGoal(sessionID)
-        if (goalForValidation && goalForValidation.status === "completed") {
-          const validationPrompt = `## Goal Validation Required
-
-The goal "${goalForValidation.title}" has been marked as completed.
-
-**Please review and verify the done condition:**
-
-**Done Condition:** ${goalForValidation.done_condition}
-${goalForValidation.description ? `**Description:** ${goalForValidation.description}` : ""}
-
-**Review Checklist:**
-- ✅ Verify the done condition is satisfied
-- ✅ Confirm the work meets requirements
-- ✅ Ensure the goal is truly complete
-
-**Your task:**
-Call goal_validate() to validate this goal.
-
-If not yet complete, you can:
-- Set a new goal with goal_set()
-- Continue working on this goal`
-
-          // Try to inject validation prompt - may fail if session is busy, but that's OK
-          await promptWithContext({
-            sessionID,
-            text: validationPrompt,
-          })
-          console.log("Validation prompt injected immediately after goal_done")
-        }
-      }
-      } catch {
-        // This is OK - validation will be triggered when session becomes idle
-      }
-
-    return completionMessage + "\n\n[TEST MARKER: goal_done executed successfully]"
+    return completionMessage
   },
 })

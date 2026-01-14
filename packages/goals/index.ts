@@ -255,7 +255,11 @@ ${goal.validated_at ? `**Validated:** ${new Date(goal.validated_at).toLocaleStri
 ${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
 **Done Condition:** ${completedGoal.done_condition}
 
-The goal is now pending validation. Call goal_validate() to validate it.`;
+The goal is now pending validation. 
+
+**REQUIRED ACTION:** Call the goal_validate() tool to validate this goal.
+
+Available tools: goal_validate() or goal_set()`;
     },
 
     goal_validate: async (): Promise<string> => {
@@ -264,16 +268,21 @@ The goal is now pending validation. Call goal_validate() to validate it.`;
       const validatedGoal = await gm.validateGoal(sessionID);
 
       if (!validatedGoal) {
-        return "⚠️ No completed goal to validate. Complete a goal first with goal_done().";
+        return "⚠️ No completed goal to validate. Use goal_done() first to mark a goal as completed, then call goal_validate().";
       }
 
-      return `✓ Goal validated!
+      return `✅ GOAL VALIDATED SUCCESSFULLY!
 
 **Title:** ${validatedGoal.title}
-**Validated At:** ${new Date(validatedGoal.validated_at!).toLocaleString()}
+**Status:** ✓ Validated  
+**Completed:** ${new Date(validatedGoal.completed_at!).toLocaleString()}
+**Validated:** ${new Date(validatedGoal.validated_at!).toLocaleString()}
+${validatedGoal.description ? `**Description:** ${validatedGoal.description}` : ""}
 **Done Condition:** ${validatedGoal.done_condition}
 
-This goal has been successfully validated and is now complete.`;
+This goal has been successfully validated and is now fully complete. 
+
+You can now set a new goal with goal_set() or continue with other tasks.`;
     },
 
     goal_cancel: async (): Promise<string> => {
@@ -343,7 +352,7 @@ export const agentLoopGoals: Plugin = async (input: PluginInput) => {
       },
       {
         name: "goal_validate",
-        description: "Validate a completed goal",
+        description: "VALIDATE the completed goal - Required step after goal_done(). Use this to confirm the done condition is satisfied and mark the goal as fully complete.",
         parameters: { type: "object", properties: {} },
         handler: async () => {
           return goalTools.goal_validate();
