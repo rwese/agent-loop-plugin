@@ -1,5 +1,24 @@
 # Changelog
 
+## [5.1.2] - 2026-01-14
+
+### Fixed
+
+- Goal validation prompt issues causing JSON parse errors and stuck state
+- Agents now properly understand that goal_validate() is available after goal_done()
+- Removed problematic prompt injection during tool execution that caused conflicts
+
+### Changed
+
+- Enhanced goal_done() response with clear messaging about goal_validate() availability
+- Improved goal_validate tool description for better agent understanding
+- Better error handling in goal validation workflow
+
+### Code Quality
+
+- Removed unused imports (getContext, sessionContext)
+- Fixed linting errors in packages/goals/index.ts and src/plugin.ts
+
 ## [5.1.0] - 2026-01-14
 
 ### Added

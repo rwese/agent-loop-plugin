@@ -11,7 +11,7 @@ import { createTaskContinuation } from "./goal/continuation.js";
 import { createGoalManagement } from "./goal/management.js";
 import { createGoalTools } from "./tools/goal/index.js";
 import { createGoalContextInjection } from "./goal-context-injection.js";
-import { initSessionContext, sessionContext } from "./session-context.js";
+import { initSessionContext } from "./session-context.js";
 
 /**
  * Agent Loop Plugin

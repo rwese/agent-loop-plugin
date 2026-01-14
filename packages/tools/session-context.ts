@@ -24,7 +24,7 @@ export function updateContext(
 /**
  * Get session context
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export function getContext(sessionID: string): SessionContext {
   return sessionContexts.get(sessionID) || {};
 }

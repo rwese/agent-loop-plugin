@@ -5,7 +5,7 @@
 
 import type { Plugin, PluginInput, Goal, GoalManagement as IGoalManagement } from "../tools/types.js";
 import { createLogger } from "../tools/logger.js";
-import { updateContext, getContext } from "../tools/session-context.js";
+import { updateContext } from "../tools/session-context.js";
 import { getEffectiveConfig } from "../../config.js";
 
 // Get debug level from config - use silent if debug is disabled
