@@ -23,7 +23,7 @@ export function createGoalTools(ctx: PluginInput) {
   async function getGoalManagement() {
     if (!goalManagement) {
       const mod = await import("./index.js")
-      goalManagement = mod.createGoalManagement(ctx, {})
+      goalManagement = mod.createGoalManagement(ctx)
     }
     return goalManagement
   }
@@ -123,54 +123,19 @@ ${goal.description ? `**Description:** ${goal.description}` : ""}
         return "⚠️ No active goal to complete. Use goal_set first."
       }
 
-      // Return completion message first
-      const completionMessage = `🎉 Goal completed!
+      // Return completion message
+      return `🎉 Goal completed!
 
 **Title:** ${completedGoal.title}
 **Completed At:** ${new Date(completedGoal.completed_at!).toLocaleString()}
 ${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
-**Done Condition:** ${completedGoal.done_condition}`
-
-      // Create validation prompt for the agent
-      const validationPrompt = `## Goal Validation Required
-
-The goal "${completedGoal.title}" has been marked as completed.
-
-**Please review the goal and verify the done condition:**
-
 **Done Condition:** ${completedGoal.done_condition}
-${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
 
-**Review Checklist:**
-- ✅ Verify the done condition is satisfied
-- ✅ Confirm the work meets the requirements
-- ✅ Ensure the goal is truly complete
+The goal is now pending validation. An agent will review and validate it.
 
-**Your next step:**
-If the done condition is satisfied, please validate this goal by calling: \`goal_validate()\`
+To validate, call: goal_validate()
 
-If the done condition is not yet met, you can:
-- Set a new goal with \`goal_set()\`
-- Continue working on the current goal`
-
-      // Try to prompt the agent for validation
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const client = (ctx as any).client
-        if (client?.session?.prompt) {
-          await client.session.prompt({
-            path: { id: sessionID },
-            body: {
-              parts: [{ type: "text", text: validationPrompt, synthetic: true }],
-            },
-          })
-        }
-      } catch (error) {
-        // Log error but don't fail the goal completion
-        console.error("Failed to inject validation prompt:", error);
-      }
-
-      return completionMessage
+Or set a new goal with: goal_set()`
     },
 
     /**

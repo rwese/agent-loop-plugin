@@ -1,22 +1,28 @@
 /**
  * Configuration loading utility for agent-loop-plugin
  *
- * Loads default configuration from ~/.config/opencode/agent-loop-plugin.json
+ * Loads default configuration from ~/.local/share/opencode/agent-loop-plugin.jsonc or .json
  * Falls back to hardcoded defaults if config file doesn't exist or is invalid.
+ * Supports JSONC (JSON with Comments) for better user experience.
  */
 
 import * as fs from "node:fs"
 import * as path from "node:path"
 
 /**
- * Configuration file name
+ * Configuration file names (checked in order)
  */
-const CONFIG_FILE_NAME = "agent-loop-plugin.json"
+const CONFIG_FILE_NAMES = ["agent-loop-plugin.jsonc", "agent-loop-plugin.json"]
 
 /**
  * Default configuration directory
  */
-const CONFIG_DIR = ".config/opencode"
+const CONFIG_DIR = ".local/share/opencode"
+
+/**
+ * Log file name
+ */
+const LOG_FILE_NAME = "agent-loop.log"
 
 /**
  * Default plugin configuration
@@ -56,15 +62,35 @@ const HARDCODED_DEFAULTS: InternalConfig = {
   errorCooldownMs: 3000,
   toastDurationMs: 900,
   debug: true,
-  logFilePath: undefined,
+  logFilePath: getDefaultLogPath(),
 }
 
 /**
  * Get the configuration file path
+ * Checks for .jsonc first, then .json
  */
 function getConfigPath(): string {
   const homeDir = process.env.HOME || process.env.USERPROFILE || ""
-  return path.join(homeDir, CONFIG_DIR, CONFIG_FILE_NAME)
+  const configDir = path.join(homeDir, CONFIG_DIR)
+  
+  // Check for JSONC first, then JSON
+  for (const fileName of CONFIG_FILE_NAMES) {
+    const configPath = path.join(configDir, fileName)
+    if (fs.existsSync(configPath)) {
+      return configPath
+    }
+  }
+  
+  // Return the JSONC path as default (will fail gracefully if not exists)
+  return path.join(configDir, CONFIG_FILE_NAMES[0])
+}
+
+/**
+ * Get the default log file path
+ */
+export function getDefaultLogPath(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || ""
+  return path.join(homeDir, CONFIG_DIR, LOG_FILE_NAME)
 }
 
 /**
@@ -81,6 +107,7 @@ function configFileExists(): boolean {
 
 /**
  * Load configuration from file
+ * Supports both JSON and JSONC formats
  * Returns null if file doesn't exist or is invalid
  */
 function loadConfigFromFile(): AgentLoopPluginOptions | null {
@@ -88,7 +115,20 @@ function loadConfigFromFile(): AgentLoopPluginOptions | null {
 
   try {
     const content = fs.readFileSync(configPath, "utf-8")
-    const config = JSON.parse(content)
+    
+    // Parse JSON or JSONC
+    let config: Record<string, unknown>
+    if (configPath.endsWith(".jsonc")) {
+      // Simple JSONC parser - removes comments and trailing commas
+      const cleanedContent = content
+        .replace(/\/\/.*$/gm, "") // Remove single-line comments
+        .replace(/\/\*[\s\S]*?\*\//g, "") // Remove multi-line comments
+        .replace(/,\s*([}\]])/g, "$1") // Remove trailing commas before } or ]
+      
+      config = JSON.parse(cleanedContent)
+    } else {
+      config = JSON.parse(content)
+    }
 
     // Validate basic structure
     if (typeof config !== "object" || config === null) {
@@ -98,13 +138,20 @@ function loadConfigFromFile(): AgentLoopPluginOptions | null {
 
     // Return validated config (unknown properties are ignored)
     return {
-      countdownSeconds: config.countdownSeconds,
-      errorCooldownMs: config.errorCooldownMs,
-      toastDurationMs: config.toastDurationMs,
-      debug: config.debug,
-      logFilePath: config.logFilePath,
+      countdownSeconds: config.countdownSeconds as number | undefined,
+      errorCooldownMs: config.errorCooldownMs as number | undefined,
+      toastDurationMs: config.toastDurationMs as number | undefined,
+      debug: config.debug as boolean | undefined,
+      logFilePath: config.logFilePath as string | undefined,
     }
   } catch (error) {
+    // Don't log error if file just doesn't exist - that's expected
+    const err = error as { code?: string }
+    if (err.code === 'ENOENT') {
+      return null
+    }
+    
+    // Only warn about unexpected errors
     console.warn(`[agent-loop-plugin] Failed to read config file: ${error}`)
     return null
   }

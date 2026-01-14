@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import type { PluginContext, Todo, LoopEvent } from "../types.js"
-import { createTaskContinuation } from "../index.ts"
+import { createTaskContinuation, initSessionContext } from "../index.ts"
 
 function createMockContext(): PluginContext {
   const mockSession = {
@@ -65,6 +65,9 @@ describe("CleanupTest", () => {
 
   it("should inject continuation when incomplete todos remain (simplified)", async () => {
     const ctx = createMockContext()
+    // Initialize session context for the test (cast to any for mock compatibility)
+    initSessionContext(ctx as any)
+    
     const mockTodoFn = ctx.client.session.todo as unknown as {
       mockResolvedValue: (val: Todo[]) => void
     }

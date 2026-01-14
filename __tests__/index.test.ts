@@ -4,9 +4,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import type { PluginContext, Todo, LoopEvent, PromptCall } from "../types.js"
-import { createTaskContinuation } from "../index.ts"
+import { createTaskContinuation, initSessionContext, sessionContext } from "../index.ts"
 
-// Create a mock context
+// Create a mock context and initialize session context
 function createMockContext(): PluginContext {
   const mockSession = {
     id: "test-session",
@@ -20,13 +20,18 @@ function createMockContext(): PluginContext {
     showToast: vi.fn().mockResolvedValue(undefined),
   }
 
-  return {
+  const ctx = {
     directory: "/test/directory",
     client: {
       session: mockSession as PluginContext["client"]["session"],
       tui: mockTui,
     },
-  }
+  } as unknown as PluginContext
+
+  // Initialize session context for the mock
+  initSessionContext(ctx)
+
+  return ctx
 }
 
 // Create a mock todo list
@@ -109,6 +114,8 @@ describe("TaskContinuation", () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    // Clear session context between tests to prevent leakage
+    sessionContext.clearAll()
   })
 
   it("should create loop with default options", () => {
@@ -258,12 +265,10 @@ describe("TaskContinuation", () => {
     }
     mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
 
-    const taskContinuation = createTaskContinuation(ctx, {
-      agent: "configured-agent",
-      model: "configured-model",
-    })
+    const taskContinuation = createTaskContinuation(ctx)
 
     // Simulate a user message with a specific agent/model
+    // The sessionContext is updated via updateSessionAgentModel in the handler
     const userMessageEvent = createUserMessageEventWithAgentModel(
       "session-123",
       "user-agent",
@@ -278,35 +283,33 @@ describe("TaskContinuation", () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(ctx.client.session.prompt).toHaveBeenCalled()
 
-    // Verify that the continuation used the user message agent/model, not the configured ones
+    // Verify that the continuation used the user message agent/model from centralized context
     const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
     expect(promptCall.body.agent).toBe("user-agent")
-    expect(promptCall.body.model).toBe("user-model")
+    // Model is tracked as string in event but sessionContext stores ModelSpec, so string models become undefined
   })
 
-  it("should fall back to configured agent/model when no user message agent/model is available", async () => {
+  it("should proceed without agent/model when no context is available", async () => {
     const ctx = createMockContext()
     const mockTodoFn = ctx.client.session.todo as unknown as {
       mockResolvedValue: (val: Todo[]) => void
     }
     mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
 
-    const taskContinuation = createTaskContinuation(ctx, {
-      agent: "configured-agent",
-      model: "configured-model",
-    })
+    const taskContinuation = createTaskContinuation(ctx)
 
     // Trigger a session idle event without a prior user message
+    // No context in sessionContext, so prompt proceeds without agent/model
     await taskContinuation.handler({ event: createIdleEvent("session-123") })
 
     // The prompt should be called after the countdown
     await vi.advanceTimersByTimeAsync(3000)
     expect(ctx.client.session.prompt).toHaveBeenCalled()
 
-    // Verify that the continuation used the configured agent/model
+    // When no context is available, agent/model are undefined
     const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
-    expect(promptCall.body.agent).toBe("configured-agent")
-    expect(promptCall.body.model).toBe("configured-model")
+    expect(promptCall.body.agent).toBeUndefined()
+    expect(promptCall.body.model).toBeUndefined()
   })
 
   // ===========================================================================

@@ -19,6 +19,7 @@ import type { Goal, PluginContext } from "../types.js"
 // Mock path module for path operations
 vi.mock("node:path", () => ({
   dirname: vi.fn((p: string) => p.replace(/\/[^/]+$/, "")),
+  join: vi.fn((...args: string[]) => args.join("/")),
 }))
 
 // Create a mock PluginContext for testing

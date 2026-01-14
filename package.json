@@ -1,6 +1,6 @@
 {
   "name": "@frugally3683/agent-loop-plugin",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "description": "Minimal Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
   "type": "module",
   "main": "dist/index.js",
@@ -23,8 +23,10 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch",
+    "build": "tsc && npm run bundle",
+    "bundle": "esbuild src/plugin.ts --bundle --format=esm --outfile=dist/plugin.bundled.js --platform=node --target=node18",
+    "watch": "tsc --watch && npm run watch:bundle",
+    "watch:bundle": "esbuild src/plugin.ts --bundle --format=esm --outfile=dist/plugin.bundled.js --platform=node --target=node18 --watch",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -56,19 +58,21 @@
   "author": "OpenCode Community",
   "license": "MIT",
   "devDependencies": {
+    "@opencode-ai/plugin": "file:/Users/wese/SyncSettings/Stow/opencode/dot-config/opencode/node_modules/@opencode-ai/plugin",
     "@types/node": "^20.19.27",
     "@typescript-eslint/eslint-plugin": "^8.51.0",
     "@typescript-eslint/parser": "^8.51.0",
     "@vitest/coverage-v8": "^4.0.16",
+    "esbuild": "^0.27.2",
     "eslint": "^9.39.2",
     "prettier": "^3.7.4",
+    "tsup": "^8.5.1",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.51.0",
     "vitest": "^4.0.16"
   },
   "files": [
     "dist",
-    "plugin.ts",
     "README.md"
   ],
   "repository": {
@@ -78,7 +82,7 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
-"opencode": {
+  "opencode": {
     "name": "agent-loop-plugin",
     "version": "4.1.0",
     "description": "Task Continuation & Goal Management Plugin - Automatically continues sessions and provides structured goal tracking using modern OpenCode tool patterns",
@@ -91,8 +95,5 @@
   "funding": {
     "type": "github",
     "url": "https://github.com/sponsors/rwese"
-  },
-  "dependencies": {
-    "@opencode-ai/plugin": "^1.1.8"
   }
 }

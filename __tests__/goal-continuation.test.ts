@@ -2,10 +2,10 @@
  * Integration test for goal-aware continuation logic
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import * as fs from "node:fs/promises"
 import type { PluginContext, Goal, GoalManagement } from "../types.js"
-import { createTaskContinuation, createGoalManagement } from "../index.js"
+import { createTaskContinuation, createGoalManagement, initSessionContext, sessionContext } from "../index.js"
 
 // Mock the fs module
 vi.mock("node:fs/promises")
@@ -13,6 +13,7 @@ vi.mock("node:fs/promises")
 // Mock path module for path operations
 vi.mock("node:path", () => ({
   dirname: vi.fn((p: string) => p.replace(/\/[^/]+$/, "")),
+  join: vi.fn((...args: string[]) => args.join("/")),
 }))
 
 describe("Goal-Aware Continuation Integration", () => {
@@ -27,8 +28,10 @@ describe("Goal-Aware Continuation Integration", () => {
         session: {
           id: "test-session",
           get: vi.fn().mockResolvedValue({ 
-            agent: "test-agent", 
-            model: { providerID: "test", modelID: "test-model" } 
+            data: {
+              agent: "test-agent", 
+              model: { providerID: "test", modelID: "test-model" }
+            }
           }),
           messages: vi.fn().mockResolvedValue([
             { 
@@ -81,10 +84,18 @@ describe("Goal-Aware Continuation Integration", () => {
 
     vi.mocked(fs.mkdir).mockResolvedValue(undefined)
 
+    // Initialize session context for tests
+    initSessionContext(mockContext as any)
+
     // Create goal management instance
     goalManagement = createGoalManagement(mockContext as any, {
       goalsBasePath: "/test/goals",
     })
+  })
+
+  afterEach(() => {
+    // Clear session context between tests
+    sessionContext.clearAll()
   })
 
   it("should continue when active goal exists even with no incomplete todos", async () => {
@@ -118,7 +129,7 @@ describe("Goal-Aware Continuation Integration", () => {
     await taskContinuation.cleanup()
   })
 
-  it("should not continue when goal is completed and no incomplete todos exist", async () => {
+  it("should continue for validation when goal is completed and no incomplete todos exist", async () => {
     // Set up no incomplete todos
     vi.mocked(mockContext.client.session.todo).mockResolvedValue([])
 
@@ -140,11 +151,16 @@ describe("Goal-Aware Continuation Integration", () => {
       },
     })
 
-    // Wait for potential countdown
+    // Wait for countdown
     await new Promise((resolve) => setTimeout(resolve, 200))
 
-    // Verify that prompt was NOT called (no continuation should happen)
-    expect(mockContext.client.session.prompt).not.toHaveBeenCalled()
+    // Verify that prompt WAS called with validation prompt (continuation should happen for validation)
+    expect(mockContext.client.session.prompt).toHaveBeenCalled()
+    
+    // Verify the validation prompt was injected
+    const promptCall = mockContext.client.session.prompt.mock.calls[0][0]
+    expect(promptCall.body.parts[0].text).toContain("Goal Validation Required")
+    expect(promptCall.body.parts[0].text).toContain("Test Goal")
 
     // Clean up
     await taskContinuation.cleanup()

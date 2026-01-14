@@ -1,6 +1,7 @@
 import { tool, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginContext } from "../../types.js"
 import { createGoalManagement } from "../../goal/management.js"
+import { promptWithContext } from "../../session-context.js"
 
 const DESCRIPTION = `Goal Completion Tool
 
@@ -44,51 +45,60 @@ export const goal_done = tool({
       return "⚠️ No active goal to complete. Use goal_set first."
     }
 
-    // Return completion message first
+    // Return completion message
     const completionMessage = `🎉 Goal completed!
 
 **Title:** ${completedGoal.title}
 **Completed At:** ${new Date(completedGoal.completed_at!).toLocaleString()}
 ${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
-**Done Condition:** ${completedGoal.done_condition}`
-
-    // Create validation prompt for the agent
-    const validationPrompt = `## Goal Validation Required
-
-The goal "${completedGoal.title}" has been marked as completed.
-
-**Please review the goal and verify the done condition:**
-
 **Done Condition:** ${completedGoal.done_condition}
-${completedGoal.description ? `**Description:** ${completedGoal.description}` : ""}
+
+The goal is now pending validation. An agent will review and validate it when the session becomes idle.
+
+To validate, call: goal_validate()
+
+Or set a new goal with: goal_set()`
+
+    // Try to trigger validation prompt injection immediately if possible
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const client = (context as any).client
+      if (client?.session?.prompt && pluginContext) {
+        // Get the goal for validation prompt
+        const goalForValidation = await gm.getGoal(sessionID)
+        if (goalForValidation && goalForValidation.status === "completed") {
+          const validationPrompt = `## Goal Validation Required
+
+The goal "${goalForValidation.title}" has been marked as completed.
+
+**Please review and verify the done condition:**
+
+**Done Condition:** ${goalForValidation.done_condition}
+${goalForValidation.description ? `**Description:** ${goalForValidation.description}` : ""}
 
 **Review Checklist:**
 - ✅ Verify the done condition is satisfied
-- ✅ Confirm the work meets the requirements
+- ✅ Confirm the work meets requirements
 - ✅ Ensure the goal is truly complete
 
-**Your next step:**
-If the done condition is satisfied, please validate this goal by calling: \`goal_validate()\`
+**Your task:**
+Call goal_validate() to validate this goal.
 
-If the done condition is not yet met, you can:
-- Set a new goal with \`goal_set()\`
-- Continue working on the current goal`
+If not yet complete, you can:
+- Set a new goal with goal_set()
+- Continue working on this goal`
 
-    // Try to prompt the agent for validation using plugin context
-    try {
-      if (pluginContext?.client?.session?.prompt) {
-        await pluginContext.client.session.prompt({
-          path: { id: sessionID },
-          body: {
-            agent: context.agent,
-            parts: [{ type: "text", text: validationPrompt, synthetic: true }],
-          },
-        })
+          // Try to inject validation prompt - may fail if session is busy, but that's OK
+          await promptWithContext({
+            sessionID,
+            text: validationPrompt,
+          })
+          console.log("Validation prompt injected immediately after goal_done")
+        }
       }
-    } catch (error) {
-      // Log error but don't fail the goal completion
-      console.error("Failed to inject validation prompt:", error);
-    }
+      } catch {
+        // This is OK - validation will be triggered when session becomes idle
+      }
 
     return completionMessage + "\n\n[TEST MARKER: goal_done executed successfully]"
   },

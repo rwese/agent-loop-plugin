@@ -1,0 +1,8 @@
+{
+  // Disable ALL logging (debug, info, warn, error)
+  // Set to true to see initialization and error messages
+  "debug": false,
+  
+  // Countdown seconds before auto-continuation (default: 2)
+  "countdownSeconds": 2,
+}

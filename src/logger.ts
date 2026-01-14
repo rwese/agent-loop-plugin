@@ -116,8 +116,12 @@ let globalLogger: PluginLogger | null = null;
 /**
  * Initialize the global logger with client context
  */
-export function initLogger(_client: PluginContext["client"]): void {
-  globalLogger = new PluginLogger({ source: "agent-loop-plugin" });
+export function initLogger(_client: PluginContext["client"], logFilePath?: string): void {
+  globalLogger = new PluginLogger({ 
+    source: "agent-loop-plugin",
+    logLevel: "debug",
+    logFilePath 
+  });
 }
 
 /**

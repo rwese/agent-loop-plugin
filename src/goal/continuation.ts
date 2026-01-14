@@ -14,6 +14,7 @@ import type {
   ModelSpec,
 } from "../types.js"
 import { createLogger } from "../logger.js"
+import { promptWithContext } from "../session-context.js"
 
 const log = createLogger("task-continuation")
 
@@ -316,20 +317,55 @@ export function createTaskContinuation(
     // Check for active goals
     let activeGoal: Goal | null = null
     let hasActiveGoal = false
+    let hasPendingValidation = false
     if (goalManagement) {
       activeGoal = await goalManagement.getGoal(sessionID)
       hasActiveGoal = activeGoal !== null && activeGoal.status === "active"
-      log.debug("Checking goals for continuation", {
-        sessionID,
-        hasGoal: activeGoal !== null,
-        goalStatus: activeGoal?.status,
-        goalTitle: activeGoal?.title,
-      })
+      hasPendingValidation = await goalManagement.checkPendingValidation(sessionID)
     }
 
-    // Continue if there are incomplete todos OR active goals
-    if (incompleteCount === 0 && !hasActiveGoal) {
-      log.debug("No incomplete tasks or active goals, skipping continuation", { sessionID })
+    // Continue if there are incomplete todos OR active goals OR pending validation
+    if (incompleteCount === 0 && !hasActiveGoal && !hasPendingValidation) {
+      return
+    }
+
+    // Handle pending validation first
+    if (hasPendingValidation && activeGoal) {
+      const validationPrompt = `## Goal Validation Required
+
+The goal "${activeGoal.title}" has been marked as completed.
+
+**Please review and verify the done condition:**
+
+**Done Condition:** ${activeGoal.done_condition}
+${activeGoal.description ? `**Description:** ${activeGoal.description}` : ""}
+
+**Review Checklist:**
+- ✅ Verify the done condition is satisfied
+- ✅ Confirm the work meets requirements
+- ✅ Ensure the goal is truly complete
+
+**Your task:**
+Call goal_validate() to validate this goal.
+
+If not yet complete, you can:
+- Set a new goal with goal_set()
+- Continue working on this goal`
+
+      try {
+        await promptWithContext({
+          sessionID,
+          text: validationPrompt,
+          directory: ctx.directory,
+        })
+        
+        // Clear the pending validation flag after injecting
+        await goalManagement?.clearPendingValidation(sessionID)
+      } catch (error) {
+        log.error(`Failed to inject validation prompt for session ${sessionID}`, {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
       return
     }
 
@@ -490,8 +526,14 @@ INSTRUCTIONS:
       })
     }
 
-    // Continue if there are incomplete todos OR active goals
-    if (incompleteCount === 0 && !hasActiveGoal) {
+    // Check for pending validation
+    let hasPendingValidation = false
+    if (goalManagement) {
+      hasPendingValidation = await goalManagement.checkPendingValidation(sessionID)
+    }
+
+    // Continue if there are incomplete todos OR active goals OR pending validation
+    if (incompleteCount === 0 && !hasActiveGoal && !hasPendingValidation) {
       return
     }
 
