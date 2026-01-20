@@ -15,8 +15,12 @@
     "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": false
+    "noEmit": false,
+    "baseUrl": ".",
+    "paths": {
+      "@opencode-ai/plugin": ["./stubs/@opencode-ai/plugin"]
+    }
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "stubs/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
