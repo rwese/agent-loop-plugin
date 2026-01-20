@@ -10,7 +10,7 @@ export interface PluginContext {
       get: (args: { path: { id: string } }) => Promise<{ data?: { id: string } }>;
       todo: (args: { path: { id: string } }) => Promise<unknown>;
       prompt: (args: { path: { id: string }; body: { agent?: string; model?: { providerID: string; modelID: string }; parts: Array<{ type: "text"; text: string }> }; query?: { directory?: string } }) => Promise<void>;
-      messages: (args: { path: { id: string } }) => Promise<unknown>;
+      messages: (args: { path: { id: string } }) => Promise<{ data?: Array<{ info?: { agent?: string; model?: { providerID: string; modelID: string } } }> }>;
     };
     tui: {
       showToast: (args: { body: { title: string; message: string; variant: string; duration: number } }) => Promise<void>;
