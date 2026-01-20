@@ -98,11 +98,14 @@ class SessionContextManager {
   /**
    * Initialize the manager with plugin context.
    * Must be called once during plugin setup.
+   * Clears all existing contexts to ensure test isolation.
    */
   initialize(ctx: PluginContext): void {
     this.client = ctx.client;
     this.directory = ctx.directory ?? null;
     this.initialized = true;
+    // Clear all contexts to ensure test isolation
+    this.contexts.clear();
   }
 
   /**

@@ -3,15 +3,23 @@
  * Shared types for all agent-loop plugins
  */
 
-import type { createOpencodeClient } from "@opencode-ai/sdk";
-
 /**
  * Plugin input context (minimal interface for plugin creation)
  */
 export interface PluginInput {
   directory: string;
-  client: ReturnType<typeof createOpencodeClient>;
-  on?: ReturnType<typeof createOpencodeClient> extends { on: infer T } ? T : never;
+  client: {
+    session: {
+      get: (args: { path: { id: string } }) => Promise<{ data?: { id: string } }>;
+      todo: (args: { path: { id: string } }) => Promise<unknown>;
+      prompt: (args: { path: { id: string }; body: { agent?: string; model?: { providerID: string; modelID: string }; parts: Array<{ type: string; text: string }> }; query?: { directory?: string } }) => Promise<void>;
+      messages: (args: { path: { id: string } }) => Promise<unknown>;
+    };
+    tui: {
+      showToast: (args: { body: { title: string; message: string; variant: string; duration: number } }) => Promise<void>;
+    };
+  };
+  on?: (event: string, handler: (data: unknown) => void) => void;
   project?: unknown;
 }
 
@@ -33,44 +41,7 @@ export interface PluginHooks {
  */
 export type Plugin = (input: PluginInput) => Promise<PluginHooks>;
 
-/**
- * Goal status states
- */
-export type GoalStatus = "active" | "completed" | "validated";
 
-/**
- * Goal structure
- */
-export interface Goal {
-  id: string;
-  sessionID: string;
-  title: string;
-  done_condition: string;
-  description?: string;
-  status: GoalStatus;
-  created_at: string;
-  completed_at?: string;
-  validated_at?: string;
-}
-
-/**
- * Goal management interface
- */
-export interface GoalManagement {
-  createGoal(
-    sessionID: string,
-    title: string,
-    done_condition: string,
-    description?: string
-  ): Promise<Goal>;
-  getGoal(sessionID: string): Promise<Goal | null>;
-  completeGoal(sessionID: string): Promise<Goal | null>;
-  validateGoal(sessionID: string): Promise<Goal | null>;
-  checkPendingValidation(sessionID: string): Promise<boolean>;
-  clearPendingValidation(sessionID: string): Promise<void>;
-  cleanup(): Promise<void>;
-  handler(event: { event: unknown }): Promise<void>;
-}
 
 /**
  * Logger interface

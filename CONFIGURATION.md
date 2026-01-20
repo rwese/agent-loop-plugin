@@ -67,12 +67,12 @@ Logs are written to the configured log file path (default: `~/.local/share/openc
 {
   "timestamp": "2026-01-14T10:30:00.000Z",
   "level": "INFO",
-  "message": "Goal created",
+  "message": "Task continuation injected",
   "data": {
     "sessionID": "session-123",
-    "title": "Complete feature"
+    "incompleteCount": 3
   },
-  "source": "agent-loop-goals"
+  "source": "agent-loop-continuation"
 }
 ```
 

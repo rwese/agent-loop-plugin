@@ -85,7 +85,7 @@
   "opencode": {
     "name": "agent-loop-plugin",
     "version": "4.1.0",
-    "description": "Task Continuation & Goal Management Plugin - Automatically continues sessions and provides structured goal tracking using modern OpenCode tool patterns",
+    "description": "Task Continuation Plugin - Automatically continues sessions when incomplete tasks remain",
     "author": "OpenCode Community",
     "license": "MIT",
     "repository": "https://github.com/rwese/agent-loop-plugin",

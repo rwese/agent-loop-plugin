@@ -1,8 +1,17 @@
-# Migration Guide: Agent Loop Plugin v4.x
+# Migration Guide: Agent Loop Plugin v5.x
 
-This guide helps you migrate from previous versions of the agent-loop-plugin to the new v4.x structure that follows the modern OpenCode plugin patterns.
+This guide helps you migrate from previous versions of the agent-loop-plugin to the new v5.x structure that focuses on task continuation only.
 
-## What's New in v4.x
+## What's New in v5.x
+
+### Goal Management Removed
+
+v5.x removes goal management functionality to focus on core task continuation:
+
+- **Removed**: Goal management tools (`goal_set`, `goal_status`, `goal_done`, `goal_cancel`, `goal_validate`)
+- **Removed**: Goal persistence and storage
+- **Removed**: Goal context injection
+- **Kept**: Task continuation with todo-based auto-continuation
 
 ### Architecture Changes
 
@@ -10,38 +19,27 @@ This guide helps you migrate from previous versions of the agent-loop-plugin to 
 
 ```
 src/
-├── index.ts           # Main entry with all exports
-├── types.ts           # Type definitions
-├── tools.ts           # Legacy tool definitions
-└── [other files]
+├── plugin.ts              # Main plugin entry point
+├── types.ts               # Type definitions (including Goal types)
+├── goal/                  # Core goal management (REMOVED)
+│   ├── management.ts      # Goal CRUD operations
+│   ├── continuation.ts    # Task continuation logic
+│   └── storage.ts         # File-based storage
+└── tools/goal/            # OpenCode tool definitions (REMOVED)
+    ├── index.ts           # Tool factory function
+    ├── goal_set.ts        # goal_set tool
+    └── ...
 ```
 
 **New Structure:**
 
 ```
 src/
-├── plugin.ts              # Main plugin entry point (NEW)
-├── types.ts               # Type definitions
+├── plugin.ts              # Main plugin entry point
+├── types.ts               # Type definitions (Goal types removed)
 ├── logger.ts              # Logging utilities
-├── goal/                  # Core goal management (REFACTORED)
-│   ├── management.ts      # Goal CRUD operations
-│   ├── continuation.ts    # Task continuation logic
-│   └── storage.ts         # File-based storage
-└── tools/goal/            # OpenCode tool definitions (NEW!)
-    ├── index.ts           # Tool factory function
-    ├── goal_set.ts        # goal_set tool
-    ├── goal_status.ts     # goal_status tool
-    ├── goal_done.ts       # goal_done tool
-    └── goal_cancel.ts     # goal_cancel tool
+└── session-context.ts     # Session context utilities
 ```
-
-### Key Changes
-
-1. **Modern Tool Pattern**: Uses `@opencode-ai/plugin` `tool()` decorator for LLM-accessible tools
-2. **Separation of Concerns**: Core logic separated from tool definitions
-3. **Type Safety**: Full TypeScript support with comprehensive interfaces
-4. **Event-Driven**: Uses OpenCode event system for session management
-5. **Backward Compatibility**: All existing APIs remain functional
 
 ## Migration Steps
 
@@ -52,7 +50,7 @@ src/
 ```json
 {
   "dependencies": {
-    "@frugally3683/agent-loop-plugin": "^3.x.x"
+    "@frugally3683/agent-loop-plugin": "^4.x.x"
   }
 }
 ```
@@ -62,137 +60,66 @@ src/
 ```json
 {
   "dependencies": {
-    "@frugally3683/agent-loop-plugin": "^4.x.x"
+    "@frugally3683/agent-loop-plugin": "^5.x.x"
   }
 }
 ```
 
-### 2. Update Imports
+### 2. Remove Goal Tool Usage
 
-**Old Import Pattern:**
-
-```typescript
-// Direct imports from specific modules
-import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
-import { createTaskContinuation } from "@frugally3683/agent-loop-plugin"
-```
-
-**New Import Pattern:**
+**Old - Using Goal Tools:**
 
 ```typescript
-// Still supported - main exports remain the same
-import {
-  agentLoopPlugin,
-  createGoalManagement,
-  createTaskContinuation,
-} from "@frugally3683/agent-loop-plugin"
-```
-
-### 3. Plugin Integration Changes
-
-**Old Way:**
-
-```typescript
-// Manually creating and managing plugin components
-import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
-
-export default function myPlugin(ctx) {
-  const goalManagement = createGoalManagement(ctx, {})
-  const taskContinuation = createTaskContinuation(ctx, {})
-
-  // Manual tool exposure
-  return {
-    tools: {
-      goal_set: (args) => {
-        /* implementation */
-      },
-      goal_status: (args) => {
-        /* implementation */
-      },
-    },
-    handlers: [
-      /* event handlers */
-    ],
-  }
-}
-```
-
-**New Way:**
-
-```typescript
-// Plugin handles everything automatically
-import agentLoopPlugin from "@frugally3683/agent-loop-plugin"
-
-export default agentLoopPlugin
-```
-
-**Advanced Configuration:**
-
-```typescript
-import { agentLoopPlugin } from "@frugally3683/agent-loop-plugin"
-
-export default {
-  plugins: [agentLoopPlugin],
-  // Custom configuration if needed
-}
-```
-
-### 4. Tool Usage Changes
-
-**Old Way - Manual Command Handling:**
-
-```typescript
-// Sending commands via session.prompt
-await ctx.client.session.prompt({
-  path: { id: sessionID },
-  body: {
-    parts: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          command: "goal_set",
-          args: {
-            title: "Implement feature X",
-            done_condition: "Feature X is complete and tested",
-            description: "Detailed description here",
-          },
-        }),
-      },
-    ],
-  },
-})
-```
-
-**New Way - Direct Tool Calls:**
-
-```typescript
-// Tools are automatically available to agents
+// Goal tools are no longer available
 await goal_set({
   title: "Implement feature X",
   done_condition: "Feature X is complete and tested",
-  description: "Detailed description here",
 })
 
-// Check goal status
 await goal_status()
-
-// Mark goal as complete
 await goal_done()
+await goal_cancel({ reason: "Changed priorities" })
+await goal_validate()
+```
 
-// Cancel goal if needed
-await goal_cancel({
-  reason: "Requirements changed",
+**New - Use Todo Management:**
+
+```typescript
+// Use todo tools for task management instead
+await todowrite({
+  todos: [
+    {
+      id: "1",
+      content: "Implement feature X",
+      status: "in_progress",
+      priority: "high",
+    },
+  ],
+})
+
+// Check todo status
+await todoread()
+
+// Update todo status
+await todowrite({
+  todos: [
+    {
+      id: "1",
+      content: "Implement feature X",
+      status: "completed",
+      priority: "high",
+    },
+  ],
 })
 ```
 
-### 5. Direct API Usage (Unchanged)
+### 3. Remove Goal Management API Usage
 
-The core goal management API remains the same:
+**Old - Direct Goal Management API:**
 
 ```typescript
 import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
 
-// Create goal management instance
 const goalManagement = createGoalManagement({
   goalsBasePath: "/custom/path/to/goals",
 })
@@ -210,179 +137,164 @@ const goal = await goalManagement.getGoal(sessionID)
 
 // Complete goal
 await goalManagement.completeGoal(sessionID)
-
-// Check for active goals
-const hasActiveGoal = await goalManagement.hasActiveGoal(sessionID)
 ```
 
-### 6. Task Continuation Integration (Unchanged)
-
-Task continuation with goal awareness works the same way:
+**New - Task Continuation Only:**
 
 ```typescript
 import { createTaskContinuation } from "@frugally3683/agent-loop-plugin"
 
 const taskContinuation = createTaskContinuation(ctx, {
-  countdownSeconds: 3,
-  goalManagement, // Enable goal-aware continuation
+  countdownSeconds: 2,
+  errorCooldownMs: 3000,
+  toastDurationMs: 900,
 })
+
+// Task continuation automatically handles:
+// - Session idle detection
+// - Todo-based auto-continuation
+// - User message handling
 ```
 
-## Tool Reference
+### 4. Update Plugin Configuration
 
-### Available Tools
+**Old Configuration with Goals:**
 
-All tools are automatically available to OpenCode agents when this plugin is loaded.
+```json
+{
+  "debug": true,
+  "countdownSeconds": 2,
+  "goalsBasePath": "~/.local/share/opencode/goals"
+}
+```
 
-#### goal_set
+**New Configuration:**
+
+```json
+{
+  "debug": true,
+  "countdownSeconds": 2,
+  "errorCooldownMs": 3000,
+  "toastDurationMs": 900,
+  "logFilePath": "~/.local/share/opencode/agent-loop.log"
+}
+```
+
+### 5. Update Import Statements
+
+**Old Imports:**
 
 ```typescript
-goal_set({
-  title: string,              // Required: Short goal title
-  done_condition: string,     // Required: What "done" looks like
-  description?: string        // Optional: Detailed explanation
-})
+import {
+  agentLoopPlugin,
+  createGoalManagement,
+  createTaskContinuation,
+} from "@frugally3683/agent-loop-plugin"
+
+// Goal types
+import type { Goal, GoalManagement } from "@frugally3683/agent-loop-plugin"
 ```
 
-#### goal_status
+**New Imports:**
 
 ```typescript
-goal_status()
-// No parameters required
+import { agentLoopPlugin, createTaskContinuation } from "@frugally3683/agent-loop-plugin"
+
+// Goal types are no longer available
 ```
-
-#### goal_done
-
-```typescript
-goal_done()
-// No parameters required
-```
-
-#### goal_cancel
-
-```typescript
-goal_cancel({
-  reason?: string  // Optional: Explanation for cancellation
-})
-```
-
-## New Tool Development Pattern
-
-If you're building custom tools, here's how to use the new pattern:
-
-```typescript
-import { tool } from "@opencode-ai/plugin"
-
-export const myCustomTool = tool({
-  description: `My Custom Tool
-  
-  A detailed description of what this tool does.
-  
-  **Parameters:**
-  - \`param1\`: Description of first parameter
-  - \`param2\`: Description of second parameter`,
-
-  args: {
-    param1: tool.schema.string().describe("First parameter description"),
-    param2: tool.schema.number().describe("Second parameter description"),
-    optionalParam: tool.schema.boolean().optional().describe("Optional parameter"),
-  },
-
-  async execute(args, context) {
-    // Tool implementation
-    return `Tool executed with: ${args.param1}, ${args.param2}`
-  },
-})
-```
-
-### Schema Definition Best Practices
-
-1. **Use Descriptive Names**: Name parameters clearly
-2. **Add Descriptions**: Use `.describe()` for parameter context
-3. **Validate Types**: Use appropriate schema types
-4. **Mark Optional**: Use `.optional()` for non-required params
-5. **Provide Defaults**: Use `.default()` when appropriate
 
 ## Breaking Changes
 
 ### Removed Features
 
-- **Legacy Tool Format**: Old tool definition format is deprecated (but still works)
-- **Manual Command Handling**: Direct command processing via `session.prompt` is no longer needed
+- **Goal Management Tools**: `goal_set`, `goal_status`, `goal_done`, `goal_cancel`, `goal_validate`
+- **Goal Management API**: `createGoalManagement` export
+- **Goal Types**: `Goal`, `GoalManagement`, `GoalManagementOptions`, `GOALS_BASE_PATH`, `GOAL_FILENAME`
+- **Goal Storage**: File-based goal persistence at `~/.local/share/opencode/plugin/agent-loop/`
+- **Goal Context Injection**: Automatic goal context in session prompts
 
-### Deprecated (Still Work)
+### Removed Configuration Options
 
-- **Direct Import Pattern**: `createGoalManagement` and `createTaskContinuation` exports remain
-- **Event Handler Pattern**: Manual event handler setup still supported
+- `goalsBasePath`: Goal storage path (no longer applicable)
+
+### Updated APIs
+
+**createTaskContinuation:**
+
+```typescript
+// Old signature
+createTaskContinuation(input, options, goalManagement?: GoalManagement)
+
+// New signature
+createTaskContinuation(input, options)
+```
+
+The `goalManagement` parameter has been removed.
 
 ## Benefits of Migration
 
-### 1. Better Developer Experience
+### 1. Simplified Architecture
 
-- Clearer project structure
-- Better TypeScript support
-- Improved tooling
+- Cleaner codebase without goal management complexity
+- Focus on core task continuation functionality
+- Easier to maintain and extend
 
-### 2. Enhanced Agent Capabilities
+### 2. Reduced Dependencies
 
-- Natural language tool calls
-- Automatic parameter validation
-- Better error handling
+- No file system operations for goal storage
+- Simpler configuration management
+- Smaller bundle size
 
-### 3. Future-Proof Architecture
+### 3. Clearer Purpose
 
-- Follows OpenCode patterns
-- Easier to extend
-- Better maintainability
+- Plugin focused on task continuation only
+- Better alignment with user expectations
+- Easier to understand and use
 
 ## Common Migration Issues
 
 ### Issue: "Module not found" Errors
 
-**Problem:** TypeScript can't find the plugin module.
+**Problem:** Can't find goal-related imports.
 
-**Solution:** Update imports to use the main export:
+**Solution:** Remove goal-related imports:
 
 ```typescript
-// Instead of deep imports
-import { createGoalManagement } from "@frugally3683/agent-loop-plugin/src/goal/management"
-
-// Use main export
+// Remove these imports
 import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
+import type { Goal } from "@frugally3683/agent-loop-plugin"
 ```
 
-### Issue: Tool Calls Not Working
+### Issue: Goal Tools Not Working
 
-**Problem:** Tools aren't available to agents.
+**Problem:** Goal tools are no longer available to agents.
 
-**Solution:** Ensure you're using the plugin correctly:
+**Solution:** Use todo management tools instead:
 
 ```typescript
-// Instead of manual setup
-export default function myPlugin() {
-  // Complex manual setup...
-}
-
-// Use the plugin directly
-import agentLoopPlugin from "@frugally3683/agent-loop-plugin"
-export default agentLoopPlugin
+// Instead of goal tools
+await todowrite({ todos: [...] })
+await todoread()
 ```
 
-### Issue: Session ID Access
+### Issue: Session Continuation Not Working
 
-**Problem:** Can't get current session ID.
+**Problem:** Task continuation behavior changed.
 
-**Solution:** Use the context provided by the plugin:
+**Solution:** Ensure you're using todo-based continuation:
 
 ```typescript
-// Old way
-const sessionID = await getSessionID(ctx)
-
-// New way - tools have built-in session access
-async function myTool(args, context) {
-  const sessionID = context.sessionID
-  // ...
-}
+// Create tasks with todos for continuation to work
+await todowrite({
+  todos: [
+    {
+      id: "1",
+      content: "Complete this task",
+      status: "in_progress",
+      priority: "high",
+    },
+  ],
+})
 ```
 
 ## Rollback Plan
@@ -394,29 +306,24 @@ If you encounter issues, you can temporarily roll back:
    ```json
    {
      "dependencies": {
-       "@frugally3683/agent-loop-plugin": "3.x.x"
+       "@frugally3683/agent-loop-plugin": "4.x.x"
      }
    }
    ```
 
-2. **Use compatibility layer:**
-   ```typescript
-   import { createGoalManagement } from "@frugally3683/agent-loop-plugin"
-   // Use existing APIs - they remain unchanged
-   ```
+2. **Note**: Goal management functionality is only available in v4.x and earlier.
 
 ## Support
 
 If you encounter issues during migration:
 
-1. **Check the examples** in the `/examples` directory
-2. **Review the updated documentation** in `README.md`
+1. **Review the updated documentation** in `README.md`
+2. **Check the examples** in the repository
 3. **Report issues** at https://github.com/rwese/agent-loop-plugin/issues
 
 ## Timeline
 
-- **v4.0.0**: Initial release with new architecture
-- **v4.1.0**: Enhanced tool patterns and documentation
-- **v5.0.0**: Planned - Complete migration to new patterns (deprecated features removed)
+- **v5.0.0**: Initial release with goal management removed
+- Future versions will focus on enhancing task continuation
 
-The migration is designed to be smooth with minimal disruption. Most users can simply update the package version and continue using their existing code.
+The migration is designed to be straightforward - simply remove goal-related code and rely on todo-based task continuation.

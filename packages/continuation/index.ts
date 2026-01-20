@@ -4,7 +4,7 @@
  * Automatically continues sessions when incomplete tasks remain
  */
 
-import type { Plugin, PluginInput, GoalManagement } from "../tools/types.js";
+import type { Plugin, PluginInput } from "../tools/types.js";
 import { createLogger } from "../tools/logger.js";
 import { getContext } from "../tools/session-context.js";
 import { getEffectiveConfig } from "../../config.js";
@@ -36,8 +36,7 @@ interface ContinuationState {
  */
 export function createTaskContinuation(
   input: PluginInput,
-  options: TaskContinuationOptions = {},
-  goalManagement?: GoalManagement
+  options: TaskContinuationOptions = {}
 ) {
   const { client } = input;
   const {
@@ -61,7 +60,8 @@ export function createTaskContinuation(
         path: { id: sessionID },
       });
       // Handle both array response and object with data property
-      return Array.isArray(response) ? response : (response?.data || []);
+      const responseObj = response as { data?: unknown[] };
+      return Array.isArray(response) ? response : (responseObj.data || []);
     } catch {
       return [];
     }
@@ -123,15 +123,9 @@ INSTRUCTIONS:
     const todos = await fetchTodos(sessionID);
     const incompleteCount = getIncompleteCount(todos);
 
-    // Check for pending validation
-    let hasPendingValidation = false;
-    if (goalManagement) {
-      hasPendingValidation = await goalManagement.checkPendingValidation(sessionID);
-    }
-
-    // Skip if no work to do and no validation pending
-    if (incompleteCount === 0 && !hasPendingValidation) {
-      log.debug("No incomplete tasks or pending validation, skipping continuation", { sessionID });
+    // Skip if no work to do
+    if (incompleteCount === 0) {
+      log.debug("No incomplete tasks, skipping continuation", { sessionID });
       return;
     }
 
@@ -139,36 +133,7 @@ INSTRUCTIONS:
     const agentModel = await getAgentModel(sessionID);
 
     // Build prompt
-    let prompt = "";
-    if (incompleteCount > 0) {
-      prompt = buildContinuationPrompt(todos);
-    }
-
-    // Add validation prompt if pending
-    if (hasPendingValidation && goalManagement) {
-      const goal = await goalManagement.getGoal(sessionID);
-      if (goal) {
-        if (prompt.length > 0) {
-          prompt += "\n\n";
-        }
-        prompt += `## Goal Validation Required
-
-The goal "${goal.title}" has been marked as completed.
-
-**Please review and verify the done condition:**
-
-**Done Condition:** ${goal.done_condition}
-${goal.description ? `**Description:** ${goal.description}` : ""}
-
-**Your task:**
-Call goal_validate() to validate this goal.
-
-If not yet complete, you can set a new goal with goal_set().`;
-
-        // Clear pending validation
-        await goalManagement.clearPendingValidation(sessionID);
-      }
-    }
+    const prompt = buildContinuationPrompt(todos);
 
     // Inject prompt
     try {
@@ -184,7 +149,6 @@ If not yet complete, you can set a new goal with goal_set().`;
       log.info("Continuation injected", {
         sessionID,
         incompleteCount,
-        hasPendingValidation,
       });
     } catch (error) {
       log.error("Failed to inject continuation", { sessionID, error });
@@ -250,21 +214,8 @@ If not yet complete, you can set a new goal with goal_set().`;
 
     log.debug("Session idle", { sessionID, incompleteCount });
 
-    // Check for active goals
-    let hasActiveGoal = false;
-    if (goalManagement) {
-      const goal = await goalManagement.getGoal(sessionID);
-      hasActiveGoal = goal !== null && goal.status === "active";
-    }
-
-    // Check for pending validation
-    let hasPendingValidation = false;
-    if (goalManagement) {
-      hasPendingValidation = await goalManagement.checkPendingValidation(sessionID);
-    }
-
-    // Continue if there are incomplete todos OR active goals OR pending validation
-    if (incompleteCount === 0 && !hasActiveGoal && !hasPendingValidation) {
+    // Continue if there are incomplete todos
+    if (incompleteCount === 0) {
       return;
     }
 
@@ -292,11 +243,17 @@ If not yet complete, you can set a new goal with goal_set().`;
   async function handleUserMessage(
     sessionID: string,
     messageID: string,
-    hasSummary: boolean
+    hasSummary: boolean,
+    isAssistant: boolean = false
   ): Promise<void> {
-    // Only cancel if this is a genuine new user message (has summary)
-    // and not just a message update
-    if (!hasSummary) {
+    // Clear error cooldown on new user message
+    state.errorCooldowns.delete(sessionID);
+    
+    // Don't cancel countdown for:
+    // - Message updates (have summary)
+    // - Assistant messages
+    // - Repeated messages (same ID, handled by timeout logic)
+    if (hasSummary || isAssistant) {
       return;
     }
 
@@ -320,7 +277,6 @@ If not yet complete, you can set a new goal with goal_set().`;
 
     // Extract sessionID from either direct property or info object
     const sessionID = evt.properties?.sessionID || evt.properties?.info?.sessionID;
-    const messageID = evt.properties?.info?.id;
 
     if (!sessionID) {
       return;
@@ -344,9 +300,22 @@ If not yet complete, you can set a new goal with goal_set().`;
         break;
 
       case "message.updated": {
-        const info = evt.properties?.info;
-        const hasSummary = !!(info as { summary?: unknown } | undefined)?.summary;
-        await handleUserMessage(sessionID, messageID || "", hasSummary);
+        const info = evt.properties?.info as { id?: string; summary?: unknown; agent?: string; model?: unknown; role?: string } | undefined;
+        const hasSummary = !!info?.summary;
+        const isAssistant = info?.role === "assistant";
+        const messageID = info?.id || "";
+        
+        // Capture agent/model only for genuine user messages (not assistant, not updates)
+        if (!isAssistant && !hasSummary && (info?.agent || info?.model)) {
+          // Import updateContext dynamically to avoid circular dependencies
+          const { updateContext } = await import("../tools/session-context.js");
+          updateContext(sessionID, {
+            agent: info.agent,
+            model: info.model as { providerID: string; modelID: string } | undefined,
+          });
+        }
+        
+        await handleUserMessage(sessionID, messageID, hasSummary, isAssistant);
         break;
       }
     }
