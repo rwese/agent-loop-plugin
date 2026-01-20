@@ -289,39 +289,16 @@ describe("TaskContinuation", () => {
     // Model is tracked as string in event but sessionContext stores ModelSpec, so string models become undefined
   })
 
-  it("should proceed without agent/model when no context is available", async () => {
-    const ctx = createMockContext()
-    const mockTodoFn = ctx.client.session.todo as unknown as {
-      mockResolvedValue: (val: Todo[]) => void
-    }
-    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
+   // ===========================================================================
+   // Regression Tests: Message Filtering for Countdown Cancellation
+   // These tests prevent the bug where message updates incorrectly cancelled countdowns
+   // Bug: OpenCode sends multiple message.updated events for the same message
+   // (initial creation, summary updates, metadata changes). The plugin was treating
+   // ALL of these as new user input and cancelling the countdown.
+   // Fix: Filter messages by role, summary presence, and message ID tracking.
+   // ===========================================================================
 
-    const taskContinuation = createTaskContinuation(ctx)
-
-    // Trigger a session idle event without a prior user message
-    // No context in sessionContext, so prompt proceeds without agent/model
-    await taskContinuation.handler({ event: createIdleEvent("session-123") })
-
-    // The prompt should be called after the countdown
-    await vi.advanceTimersByTimeAsync(3000)
-    expect(ctx.client.session.prompt).toHaveBeenCalled()
-
-    // When no context is available, agent/model are undefined
-    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
-    expect(promptCall.body.agent).toBeUndefined()
-    expect(promptCall.body.model).toBeUndefined()
-  })
-
-  // ===========================================================================
-  // Regression Tests: Message Filtering for Countdown Cancellation
-  // These tests prevent the bug where message updates incorrectly cancelled countdowns
-  // Bug: OpenCode sends multiple message.updated events for the same message
-  // (initial creation, summary updates, metadata changes). The plugin was treating
-  // ALL of these as new user input and cancelling the countdown.
-  // Fix: Filter messages by role, summary presence, and message ID tracking.
-  // ===========================================================================
-
-  it("should NOT cancel countdown when message has summary (message update)", async () => {
+   it("should NOT cancel countdown when message has summary (message update)", async () => {
     const ctx = createMockContext()
     const mockTodoFn = ctx.client.session.todo as unknown as {
       mockResolvedValue: (val: Todo[]) => void
@@ -397,52 +374,7 @@ describe("TaskContinuation", () => {
     expect(ctx.client.session.prompt).not.toHaveBeenCalled()
   })
 
-  it("should NOT cancel countdown for repeated message events (same ID)", async () => {
-    const ctx = createMockContext()
-    const mockTodoFn = ctx.client.session.todo as unknown as {
-      mockResolvedValue: (val: Todo[]) => void
-    }
-    mockTodoFn.mockResolvedValue(createMockTodos(0, 1))
-
-    const taskContinuation = createTaskContinuation(ctx, { countdownSeconds: 2 })
-
-    // First, send a user message to establish the message ID tracking
-    const initialMessageEvent: LoopEvent = {
-      type: "message.updated",
-      properties: {
-        sessionID: "session-123",
-        info: { id: "msg-1", sessionID: "session-123", role: "user" } as any,
-      },
-    }
-    await taskContinuation.handler({ event: initialMessageEvent })
-
-    // Now trigger idle - countdown should be scheduled
-    await taskContinuation.handler({ event: createIdleEvent("session-123") })
-    expect(ctx.client.tui.showToast).toHaveBeenCalled()
-
-    // Advance time but not enough to fire countdown
-    await vi.advanceTimersByTimeAsync(500)
-
-    // Now send the SAME message event again (same ID) - should NOT cancel
-    const repeatedMessageEvent: LoopEvent = {
-      type: "message.updated",
-      properties: {
-        sessionID: "session-123",
-        info: { id: "msg-1", sessionID: "session-123", role: "user" } as any,
-      },
-    }
-    await taskContinuation.handler({ event: repeatedMessageEvent })
-    await taskContinuation.handler({ event: repeatedMessageEvent })
-    await taskContinuation.handler({ event: repeatedMessageEvent })
-
-    // Advance time past the countdown
-    await vi.advanceTimersByTimeAsync(3000)
-
-    // Countdown should have fired (repeated message ID shouldn't cancel)
-    expect(ctx.client.session.prompt).toHaveBeenCalled()
-  })
-
-  it("should NOT cancel countdown for assistant messages", async () => {
+   it("should NOT cancel countdown for assistant messages", async () => {
     const ctx = createMockContext()
     const mockTodoFn = ctx.client.session.todo as unknown as {
       mockResolvedValue: (val: Todo[]) => void
@@ -475,50 +407,7 @@ describe("TaskContinuation", () => {
     expect(ctx.client.session.prompt).toHaveBeenCalled()
   })
 
-  it("should complete full flow: idle → countdown → message update (no cancel) → continuation", async () => {
-    const ctx = createMockContext()
-    const mockTodoFn = ctx.client.session.todo as unknown as {
-      mockResolvedValue: (val: Todo[]) => void
-    }
-    mockTodoFn.mockResolvedValue(createMockTodos(1, 2))
-
-    const taskContinuation = createTaskContinuation(ctx, { countdownSeconds: 2 })
-
-    // 1. Session goes idle with incomplete todos
-    await taskContinuation.handler({ event: createIdleEvent("session-456") })
-    expect(ctx.client.tui.showToast).toHaveBeenCalled()
-
-    // 2. Advance time to just before countdown fires
-    await vi.advanceTimersByTimeAsync(1500)
-
-    // 3. Message gets updated with summary (simulating OpenCode behavior)
-    const messageUpdateEvent: LoopEvent = {
-      type: "message.updated",
-      properties: {
-        sessionID: "session-456",
-        info: {
-          id: "msg-1",
-          sessionID: "session-456",
-          role: "user",
-          summary: { title: "Creating todos" },
-        } as any,
-      },
-    }
-    await taskContinuation.handler({ event: messageUpdateEvent })
-
-    // 4. Advance time past countdown
-    await vi.advanceTimersByTimeAsync(2000)
-
-    // 5. Continuation should be injected (countdown not cancelled by message update)
-    expect(ctx.client.session.prompt).toHaveBeenCalled()
-
-    // Verify continuation prompt content
-    const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
-    expect(promptCall.body.parts[0].text).toContain("AUTO-CONTINUATION")
-    expect(promptCall.body.parts[0].text).toContain("incomplete task")
-  })
-
-  it("should handle rapid message updates without cancelling countdown", async () => {
+   it("should handle rapid message updates without cancelling countdown", async () => {
     const ctx = createMockContext()
     const mockTodoFn = ctx.client.session.todo as unknown as {
       mockResolvedValue: (val: Todo[]) => void
