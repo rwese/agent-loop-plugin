@@ -183,6 +183,10 @@ export function createTaskContinuation(
   const pendingCountdowns = new Map<string, ReturnType<typeof setTimeout>>()
   const lastProcessedMessageID = new Map<string, string>()
   const sessionAgentModel = new Map<string, { agent?: string; model?: string | ModelSpec }>()
+  // Track pending cancellations to prevent race conditions
+  const pendingCancellations = new Set<string>()
+  // Track message timestamps for better deduplication
+  const messageTimestamps = new Map<string, number>()
 
   async function fetchTodos(sessionID: string): Promise<Todo[]> {
     try {
@@ -295,8 +299,45 @@ export function createTaskContinuation(
     return { agent: agent ?? undefined, model: model ?? undefined }
   }
 
+  /**
+   * Atomically cancel a countdown and mark session as cancelled.
+   * Returns true if a countdown was actually cancelled.
+   */
+  function cancelCountdownAtomic(sessionID: string, reason: string): boolean {
+    const existingTimeout = pendingCountdowns.get(sessionID)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      pendingCountdowns.delete(sessionID)
+      pendingCancellations.add(sessionID)
+      errorCooldowns.set(sessionID, Date.now())
+      log.debug("Countdown cancelled atomically", { sessionID, reason })
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Check if a session has a pending cancellation
+   */
+  function hasPendingCancellation(sessionID: string): boolean {
+    return pendingCancellations.has(sessionID)
+  }
+
+  /**
+   * Clear cancellation state for a session (e.g., when user sends new non-cancel message)
+   */
+  function clearCancellationState(sessionID: string): void {
+    pendingCancellations.delete(sessionID)
+  }
+
   async function injectContinuation(sessionID: string): Promise<void> {
     log.debug("injectContinuation called", { sessionID })
+
+    // Check for pending cancellation before proceeding
+    if (hasPendingCancellation(sessionID)) {
+      log.debug("Skipping continuation due to pending cancellation", { sessionID })
+      return
+    }
 
     // Clear any pending countdown
     const existingTimeout = pendingCountdowns.get(sessionID)
@@ -455,6 +496,12 @@ INSTRUCTIONS:
   }
 
   async function scheduleContinuation(sessionID: string): Promise<void> {
+    // Check for pending cancellation before scheduling
+    if (hasPendingCancellation(sessionID)) {
+      log.debug("Skipping continuation scheduling due to pending cancellation", { sessionID })
+      return
+    }
+
     // Clear any existing countdown
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
@@ -464,6 +511,11 @@ INSTRUCTIONS:
     // Schedule new countdown
     const timeout = setTimeout(async () => {
       pendingCountdowns.delete(sessionID)
+      // Double-check cancellation state when timer fires
+      if (hasPendingCancellation(sessionID)) {
+        log.debug("Timer fired but cancellation pending, skipping", { sessionID })
+        return
+      }
       try {
         log.debug("Countdown timer fired, injecting continuation", { sessionID })
         await injectContinuation(sessionID)
@@ -576,26 +628,8 @@ INSTRUCTIONS:
   const handleUserMessage = async (sessionID: string, event?: LoopEvent): Promise<void> => {
     log.debug("handleUserMessage called", { sessionID, eventType: event?.type })
 
-    // Clear error cooldown on user message
-    errorCooldowns.delete(sessionID)
-
-    // Check for interruption in message
+    // Extract message info first
     const info = event?.properties?.info
-    const messageError = (info as { error?: unknown })?.error
-    if (messageError) {
-      const { isInterruption } = checkInterruption(messageError)
-      if (isInterruption) {
-        const existingTimeout = pendingCountdowns.get(sessionID)
-        if (existingTimeout) {
-          clearTimeout(existingTimeout)
-          pendingCountdowns.delete(sessionID)
-        }
-        errorCooldowns.set(sessionID, Date.now())
-        log.debug("Message interruption detected", { sessionID })
-      }
-    }
-
-    // Check for new user message to cancel countdown
     const messageID = (info as { id?: string })?.id
     const role = (info as { role?: string })?.role
     const summary = (info as { summary?: unknown })?.summary
@@ -603,48 +637,90 @@ INSTRUCTIONS:
       (info as { content?: string; text?: string; message?: string })?.content ||
       (info as { content?: string; text?: string; message?: string })?.text ||
       (info as { content?: string; text?: string; message?: string })?.message
+    const messageTimestamp = (info as { timestamp?: number; createdAt?: number })?.timestamp ||
+      (info as { timestamp?: number; createdAt?: number })?.createdAt ||
+      Date.now()
 
+    // Check for interruption in message (handle error case first)
+    const messageError = (info as { error?: unknown })?.error
+    if (messageError) {
+      const { isInterruption } = checkInterruption(messageError)
+      if (isInterruption) {
+        cancelCountdownAtomic(sessionID, "message_error_interruption")
+        log.debug("Message interruption detected", { sessionID })
+        return // Exit early on interruption
+      }
+    }
+
+    // Deduplication: Check message ID and timestamp
     if (messageID) {
       const lastProcessed = lastProcessedMessageID.get(sessionID)
-      if (lastProcessed !== messageID) {
-        lastProcessedMessageID.set(sessionID, messageID)
+      const lastTimestamp = messageTimestamps.get(sessionID) ?? 0
+      
+      // Skip if same message ID or if timestamp is older/same as last processed
+      if (lastProcessed === messageID) {
+        log.debug("Skipping duplicate message", { sessionID, messageID })
+        return
+      }
+      
+      // Additional timestamp check for race condition prevention
+      if (messageTimestamp <= lastTimestamp && lastProcessed) {
+        log.debug("Skipping out-of-order message", { 
+          sessionID, 
+          messageID, 
+          messageTimestamp, 
+          lastTimestamp 
+        })
+        return
+      }
+      
+      // Update tracking atomically
+      lastProcessedMessageID.set(sessionID, messageID)
+      messageTimestamps.set(sessionID, messageTimestamp)
+    }
 
-        if (role === "user" && !summary) {
-          const existingTimeout = pendingCountdowns.get(sessionID)
-          if (existingTimeout) {
-            clearTimeout(existingTimeout)
-            pendingCountdowns.delete(sessionID)
-            log.debug("New user message cancelled pending countdown", { sessionID, messageID })
-          }
+    // Handle user messages (not summaries)
+    if (role === "user" && !summary) {
+      // Check if message indicates explicit cancellation first
+      const isCancellation = messageContent && checkMessageCancellation(messageContent)
+      
+      if (isCancellation) {
+        // Explicit cancellation: cancel countdown and set cooldown atomically
+        const wasCancelled = cancelCountdownAtomic(sessionID, "user_cancellation_message")
+        
+        log.debug("User cancellation detected in message", {
+          sessionID,
+          messageID,
+          content: messageContent.substring(0, 100),
+          hadPendingCountdown: wasCancelled,
+        })
 
-          // Check if the message indicates user cancellation
-          if (messageContent && checkMessageCancellation(messageContent)) {
-            const cancelTimeout = pendingCountdowns.get(sessionID)
-            if (cancelTimeout) {
-              clearTimeout(cancelTimeout)
-              pendingCountdowns.delete(sessionID)
-            }
-            errorCooldowns.set(sessionID, Date.now())
-            log.debug("User cancellation detected in message", {
-              sessionID,
-              messageID,
-              content: messageContent.substring(0, 100),
-            })
-
-            try {
-              await ctx.client.tui.showToast({
-                body: {
-                  title: "Task Cancelled",
-                  message: "Continuation cancelled based on your message",
-                  variant: "warning",
-                  duration: 2000,
-                },
-              })
-            } catch {
-              // Ignore toast errors
-            }
-          }
+        try {
+          await ctx.client.tui.showToast({
+            body: {
+              title: "Task Cancelled",
+              message: "Continuation cancelled based on your message",
+              variant: "warning",
+              duration: 2000,
+            },
+          })
+        } catch {
+          // Ignore toast errors
         }
+      } else {
+        // Non-cancellation user message: cancel any pending countdown but clear cancellation state
+        // This allows future continuations after user interacts
+        const existingTimeout = pendingCountdowns.get(sessionID)
+        if (existingTimeout) {
+          clearTimeout(existingTimeout)
+          pendingCountdowns.delete(sessionID)
+          log.debug("New user message cancelled pending countdown", { sessionID, messageID })
+        }
+        
+        // Clear previous error cooldown and cancellation state on new user input
+        // This resets the session to a clean state for future continuations
+        errorCooldowns.delete(sessionID)
+        clearCancellationState(sessionID)
       }
     }
 
@@ -671,6 +747,8 @@ INSTRUCTIONS:
     errorCooldowns.delete(sessionID)
     sessionAgentModel.delete(sessionID)
     lastProcessedMessageID.delete(sessionID)
+    pendingCancellations.delete(sessionID)
+    messageTimestamps.delete(sessionID)
 
     const existingTimeout = pendingCountdowns.get(sessionID)
     if (existingTimeout) {
@@ -803,6 +881,8 @@ INSTRUCTIONS:
 
     errorCooldowns.delete(sessionID)
     recoveringSessions.delete(sessionID)
+    pendingCancellations.delete(sessionID)
+    messageTimestamps.delete(sessionID)
   }
 
   const cleanup = async (): Promise<void> => {
@@ -814,6 +894,8 @@ INSTRUCTIONS:
     errorCooldowns.clear()
     sessionAgentModel.clear()
     lastProcessedMessageID.clear()
+    pendingCancellations.clear()
+    messageTimestamps.clear()
     log.debug("Task continuation cleanup completed")
   }
 
