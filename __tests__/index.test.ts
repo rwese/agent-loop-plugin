@@ -159,7 +159,7 @@ describe("TaskContinuation", () => {
     const promptCall = (ctx.client.session.prompt as any).mock.calls[0][0] as PromptCall
     const call: PromptCall = promptCall
     expect(call.body.parts[0].ignored).toBeUndefined()
-    expect(call.body.parts[0].text).toContain("AUTO-CONTINUATION")
+    expect(call.body.parts[0].text).toContain("TASK CONTINUATION")
   })
 
   it("should handle session without sessionID", async () => {

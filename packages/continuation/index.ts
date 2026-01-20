@@ -60,7 +60,8 @@ export function createTaskContinuation(
       const response = await client.session.todo({
         path: { id: sessionID },
       });
-      return response.data || [];
+      // Handle both array response and object with data property
+      return Array.isArray(response) ? response : (response?.data || []);
     } catch {
       return [];
     }
@@ -311,14 +312,15 @@ If not yet complete, you can set a new goal with goal_set().`;
    * Main event handler
    */
   async function handler(event: { event: unknown }): Promise<void> {
-    const evt = event.event as { type?: string; properties?: { info?: { sessionID?: string; id?: string } } };
+    const evt = event.event as { type?: string; properties?: { sessionID?: string; info?: { sessionID?: string; id?: string } } };
 
-    if (!evt?.type || !evt.properties?.info) {
+    if (!evt?.type) {
       return;
     }
 
-    const sessionID = evt.properties.info.sessionID;
-    const messageID = evt.properties.info.id;
+    // Extract sessionID from either direct property or info object
+    const sessionID = evt.properties?.sessionID || evt.properties?.info?.sessionID;
+    const messageID = evt.properties?.info?.id;
 
     if (!sessionID) {
       return;
@@ -342,8 +344,8 @@ If not yet complete, you can set a new goal with goal_set().`;
         break;
 
       case "message.updated": {
-        const info = evt.properties.info;
-        const hasSummary = !!(info as { summary?: unknown }).summary;
+        const info = evt.properties?.info;
+        const hasSummary = !!(info as { summary?: unknown } | undefined)?.summary;
         await handleUserMessage(sessionID, messageID || "", hasSummary);
         break;
       }
@@ -367,6 +369,21 @@ If not yet complete, you can set a new goal with goal_set().`;
     handler,
     cleanup,
     scheduleContinuation,
+    markRecovering: (sessionID: string) => {
+      state.recoveringSessions.add(sessionID);
+    },
+    markRecoveryComplete: (sessionID: string) => {
+      state.recoveringSessions.delete(sessionID);
+    },
+    cancel: (sessionID: string) => {
+      const existingTimeout = state.pendingCountdowns.get(sessionID);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+        state.pendingCountdowns.delete(sessionID);
+      }
+      state.errorCooldowns.delete(sessionID);
+      state.recoveringSessions.delete(sessionID);
+    },
   };
 }
 

@@ -18,6 +18,391 @@ import { promptWithContext } from "../session-context.js"
 
 const log = createLogger("task-continuation")
 
+// ============================================================================
+// STATE MACHINE TYPES
+// ============================================================================
+
+/**
+ * Continuation state machine states
+ */
+type ContinuationStateType =
+  | "idle"           // No continuation scheduled
+  | "scheduled"      // Countdown timer scheduled
+  | "injecting"      // Currently injecting prompt
+  | "cancelled"      // User cancelled, blocking continuation
+  | "recovering"     // Session in recovery mode
+  | "cooldown"       // In error cooldown period
+
+/**
+ * Unified state container for a session's continuation state
+ */
+interface SessionContinuationState {
+  /** Current state machine state */
+  state: ContinuationStateType
+  /** Active countdown timer (if scheduled) */
+  timeout: ReturnType<typeof setTimeout> | null
+  /** Timestamp when cooldown started */
+  cooldownStart: number | null
+  /** Last processed message ID for deduplication */
+  lastMessageID: string | null
+  /** Last message timestamp for ordering */
+  lastMessageTimestamp: number
+  /** Captured agent/model config for the session */
+  agentModel: { agent?: string; model?: string | ModelSpec } | null
+  /** State change timestamp for debugging */
+  stateChangedAt: number
+}
+
+/**
+ * Manages continuation state machine for all sessions
+ * Provides atomic state transitions with validation
+ */
+class ContinuationStateManager {
+  private sessions = new Map<string, SessionContinuationState>()
+  private readonly errorCooldownMs: number
+
+  constructor(errorCooldownMs: number) {
+    this.errorCooldownMs = errorCooldownMs
+  }
+
+  /**
+   * Get or create session state
+   */
+  private getSession(sessionID: string): SessionContinuationState {
+    let session = this.sessions.get(sessionID)
+    if (!session) {
+      session = {
+        state: "idle",
+        timeout: null,
+        cooldownStart: null,
+        lastMessageID: null,
+        lastMessageTimestamp: 0,
+        agentModel: null,
+        stateChangedAt: Date.now(),
+      }
+      this.sessions.set(sessionID, session)
+    }
+    return session
+  }
+
+  /**
+   * Atomically check if transition is valid
+   */
+  canTransition(sessionID: string, from: ContinuationStateType[], _to: ContinuationStateType): boolean {
+    const session = this.getSession(sessionID)
+    return from.includes(session.state)
+  }
+
+  /**
+   * Atomic transition with validation - returns success
+   */
+  transition(sessionID: string, from: ContinuationStateType[], to: ContinuationStateType): boolean {
+    const session = this.getSession(sessionID)
+    
+    if (!from.includes(session.state)) {
+      log.warn("Invalid state transition attempted", {
+        sessionID,
+        currentState: session.state,
+        attemptedState: to,
+        allowedFrom: from,
+      })
+      return false
+    }
+
+    session.state = to
+    session.stateChangedAt = Date.now()
+    
+    log.debug("State transition successful", {
+      sessionID,
+      from: from,
+      to,
+    })
+    
+    return true
+  }
+
+  /**
+   * Schedule a countdown - returns true if scheduled
+   */
+  scheduleCountdown(sessionID: string, callback: () => Promise<void>, delayMs: number): boolean {
+    const session = this.getSession(sessionID)
+    
+    // Clear existing timeout
+    if (session.timeout) {
+      clearTimeout(session.timeout)
+      session.timeout = null
+    }
+
+    // Check if we can transition to scheduled
+    if (!this.canTransition(sessionID, ["idle", "cooldown"], "scheduled")) {
+      log.debug("scheduleCountdown: cannot transition to scheduled", {
+        sessionID,
+        currentState: session.state,
+      })
+      return false
+    }
+
+    const timeout = setTimeout(async () => {
+      // Use the session's state at timeout firing time
+      const currentSession = this.sessions.get(sessionID)
+      if (!currentSession) return
+
+      // Check if still in scheduled state
+      if (currentSession.state !== "scheduled") {
+        log.debug("Timer fired but no longer in scheduled state", {
+          sessionID,
+          state: currentSession.state,
+        })
+        return
+      }
+
+      // Transition to injecting and execute callback
+      currentSession.state = "injecting"
+      currentSession.stateChangedAt = Date.now()
+      currentSession.timeout = null
+
+      try {
+        await callback()
+      } catch (error) {
+        log.error("Error in countdown callback", {
+          sessionID,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }, delayMs)
+
+    session.timeout = timeout
+    
+    if (!this.transition(sessionID, ["idle", "cooldown"], "scheduled")) {
+      // Rollback timeout creation if transition failed
+      clearTimeout(timeout)
+      session.timeout = null
+      return false
+    }
+
+    return true
+  }
+
+  /**
+   * Cancel any pending countdown and transition to cancelled
+   */
+  cancelCountdown(sessionID: string, reason: string): boolean {
+    const session = this.getSession(sessionID)
+    
+    // Clear timeout if exists
+    if (session.timeout) {
+      clearTimeout(session.timeout)
+      session.timeout = null
+    }
+
+    // Set cooldown start timestamp
+    session.cooldownStart = Date.now()
+
+    // Try to transition to cancelled
+    const transitioned = this.transition(sessionID, ["idle", "scheduled", "injecting", "cooldown"], "cancelled")
+    
+    if (transitioned) {
+      log.debug("Countdown cancelled", { sessionID, reason })
+    }
+    
+    return transitioned
+  }
+
+  /**
+   * Clear countdown timer (on session active/busy)
+   */
+  clearCountdown(sessionID: string): void {
+    const session = this.getSession(sessionID)
+    
+    if (session.timeout) {
+      clearTimeout(session.timeout)
+      session.timeout = null
+    }
+
+    // Transition from scheduled back to idle
+    if (session.state === "scheduled") {
+      session.state = "idle"
+      session.stateChangedAt = Date.now()
+    }
+  }
+
+  /**
+   * Check if continuation should be blocked
+   */
+  isBlocked(sessionID: string): boolean {
+    const session = this.getSession(sessionID)
+    return session.state === "cancelled"
+  }
+
+  /**
+   * Check if in error cooldown
+   */
+  isInCooldown(sessionID: string): boolean {
+    const session = this.getSession(sessionID)
+    
+    if (session.state === "cooldown" && session.cooldownStart !== null) {
+      const elapsed = Date.now() - session.cooldownStart
+      if (elapsed < this.errorCooldownMs) {
+        return true
+      }
+      // Cooldown period has passed, transition back to idle
+      session.state = "idle"
+      session.stateChangedAt = Date.now()
+      session.cooldownStart = null
+    }
+    
+    return false
+  }
+
+  /**
+   * Start error cooldown
+   */
+  startCooldown(sessionID: string): void {
+    const session = this.getSession(sessionID)
+    
+    // Clear any existing timeout
+    if (session.timeout) {
+      clearTimeout(session.timeout)
+      session.timeout = null
+    }
+
+    session.cooldownStart = Date.now()
+    session.state = "cooldown"
+    session.stateChangedAt = Date.now()
+  }
+
+  /**
+   * Clear cooldown (on new user message)
+   */
+  clearCooldown(sessionID: string): void {
+    const session = this.getSession(sessionID)
+    
+    session.cooldownStart = null
+    
+    if (session.state === "cooldown") {
+      session.state = "idle"
+      session.stateChangedAt = Date.now()
+    }
+  }
+
+  /**
+   * Update message tracking - returns true if new message
+   */
+  trackMessage(sessionID: string, messageID: string, timestamp: number): boolean {
+    const session = this.getSession(sessionID)
+    
+    // Skip if same message ID
+    if (session.lastMessageID === messageID) {
+      return false
+    }
+    
+    // Skip if timestamp is older than last processed
+    if (timestamp <= session.lastMessageTimestamp && session.lastMessageID !== null) {
+      return false
+    }
+
+    session.lastMessageID = messageID
+    session.lastMessageTimestamp = timestamp
+    return true
+  }
+
+  /**
+   * Update agent/model config
+   */
+  setAgentModel(sessionID: string, config: { agent?: string; model?: string | ModelSpec }): void {
+    const session = this.getSession(sessionID)
+    session.agentModel = config
+  }
+
+  /**
+   * Get agent/model config
+   */
+  getAgentModel(sessionID: string): { agent?: string; model?: string | ModelSpec } | null {
+    const session = this.getSession(sessionID)
+    return session.agentModel
+  }
+
+  /**
+   * Mark session as recovering
+   */
+  setRecovering(sessionID: string, recovering: boolean): void {
+    const session = this.getSession(sessionID)
+    
+    if (recovering) {
+      // Clear any existing timeout
+      if (session.timeout) {
+        clearTimeout(session.timeout)
+        session.timeout = null
+      }
+      
+      session.state = "recovering"
+      session.stateChangedAt = Date.now()
+    } else {
+      // Transition back to idle when recovery completes
+      session.state = "idle"
+      session.stateChangedAt = Date.now()
+    }
+  }
+
+  /**
+   * Check if session is recovering
+   */
+  isRecovering(sessionID: string): boolean {
+    const session = this.getSession(sessionID)
+    return session.state === "recovering"
+  }
+
+  /**
+   * Reset session to idle state (clears cancellation)
+   */
+  resetToIdle(sessionID: string): void {
+    const session = this.getSession(sessionID)
+    
+    // Only reset from cancelled state
+    if (session.state === "cancelled") {
+      session.state = "idle"
+      session.stateChangedAt = Date.now()
+      session.cooldownStart = null
+    }
+  }
+
+  /**
+   * Delete all state for a session
+   */
+  deleteSession(sessionID: string): void {
+    const session = this.sessions.get(sessionID)
+    if (session) {
+      if (session.timeout) {
+        clearTimeout(session.timeout)
+      }
+      this.sessions.delete(sessionID)
+    }
+  }
+
+  /**
+   * Cleanup all sessions
+   */
+  cleanup(): void {
+    for (const session of this.sessions.values()) {
+      if (session.timeout) {
+        clearTimeout(session.timeout)
+      }
+    }
+    this.sessions.clear()
+  }
+
+  /**
+   * Get current state for debugging
+   */
+  getState(sessionID: string): ContinuationStateType {
+    return this.getSession(sessionID).state
+  }
+}
+
+// ============================================================================
+// LEGACY HELPER FUNCTIONS
+// ============================================================================
+
 /**
  * Get incomplete todos from a list
  */
@@ -161,6 +546,10 @@ function checkMessageCancellation(message: string): boolean {
   return cancellationPatterns.some((pattern) => pattern.test(lowerMessage))
 }
 
+// ============================================================================
+// MAIN IMPLEMENTATION
+// ============================================================================
+
 /**
  * Create task continuation instance
  */
@@ -177,16 +566,8 @@ export function createTaskContinuation(
     goalManagement,
   } = options
 
-  // Track sessions and state
-  const recoveringSessions = new Set<string>()
-  const errorCooldowns = new Map<string, number>()
-  const pendingCountdowns = new Map<string, ReturnType<typeof setTimeout>>()
-  const lastProcessedMessageID = new Map<string, string>()
-  const sessionAgentModel = new Map<string, { agent?: string; model?: string | ModelSpec }>()
-  // Track pending cancellations to prevent race conditions
-  const pendingCancellations = new Set<string>()
-  // Track message timestamps for better deduplication
-  const messageTimestamps = new Map<string, number>()
+  // Create state manager instance
+  const stateManager = new ContinuationStateManager(errorCooldownMs)
 
   async function fetchTodos(sessionID: string): Promise<Todo[]> {
     try {
@@ -264,24 +645,11 @@ export function createTaskContinuation(
     return null
   }
 
-  function updateSessionAgentModel(
-    sessionID: string,
-    eventAgent?: string,
-    eventModel?: string | { providerID: string; modelID: string }
-  ): void {
-    if (eventAgent || eventModel) {
-      sessionAgentModel.set(sessionID, {
-        agent: eventAgent,
-        model: eventModel,
-      })
-    }
-  }
-
   async function getAgentModel(sessionID: string): Promise<{
     agent?: string | undefined
     model?: string | { providerID: string; modelID: string } | undefined
   }> {
-    const tracked = sessionAgentModel.get(sessionID)
+    const tracked = stateManager.getAgentModel(sessionID)
     if (tracked && (tracked.agent || tracked.model)) {
       return tracked
     }
@@ -299,51 +667,13 @@ export function createTaskContinuation(
     return { agent: agent ?? undefined, model: model ?? undefined }
   }
 
-  /**
-   * Atomically cancel a countdown and mark session as cancelled.
-   * Returns true if a countdown was actually cancelled.
-   */
-  function cancelCountdownAtomic(sessionID: string, reason: string): boolean {
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
-      pendingCancellations.add(sessionID)
-      errorCooldowns.set(sessionID, Date.now())
-      log.debug("Countdown cancelled atomically", { sessionID, reason })
-      return true
-    }
-    return false
-  }
-
-  /**
-   * Check if a session has a pending cancellation
-   */
-  function hasPendingCancellation(sessionID: string): boolean {
-    return pendingCancellations.has(sessionID)
-  }
-
-  /**
-   * Clear cancellation state for a session (e.g., when user sends new non-cancel message)
-   */
-  function clearCancellationState(sessionID: string): void {
-    pendingCancellations.delete(sessionID)
-  }
-
   async function injectContinuation(sessionID: string): Promise<void> {
     log.debug("injectContinuation called", { sessionID })
 
     // Check for pending cancellation before proceeding
-    if (hasPendingCancellation(sessionID)) {
+    if (stateManager.isBlocked(sessionID)) {
       log.debug("Skipping continuation due to pending cancellation", { sessionID })
       return
-    }
-
-    // Clear any pending countdown
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
     }
 
     const todos = await fetchTodos(sessionID)
@@ -497,62 +827,50 @@ INSTRUCTIONS:
 
   async function scheduleContinuation(sessionID: string): Promise<void> {
     // Check for pending cancellation before scheduling
-    if (hasPendingCancellation(sessionID)) {
+    if (stateManager.isBlocked(sessionID)) {
       log.debug("Skipping continuation scheduling due to pending cancellation", { sessionID })
       return
     }
 
-    // Clear any existing countdown
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-    }
+    // Clear any existing countdown via state manager
+    stateManager.clearCountdown(sessionID)
 
     // Schedule new countdown
-    const timeout = setTimeout(async () => {
-      pendingCountdowns.delete(sessionID)
-      // Double-check cancellation state when timer fires
-      if (hasPendingCancellation(sessionID)) {
-        log.debug("Timer fired but cancellation pending, skipping", { sessionID })
-        return
-      }
-      try {
-        log.debug("Countdown timer fired, injecting continuation", { sessionID })
+    const scheduled = stateManager.scheduleCountdown(
+      sessionID,
+      async () => {
         await injectContinuation(sessionID)
-      } catch (error) {
-        log.error(`Error in continuation timeout callback for session ${sessionID}`, {
-          error: error instanceof Error ? error.message : String(error),
+      },
+      countdownSeconds * 1000
+    )
+
+    if (scheduled) {
+      log.debug("Countdown timer scheduled", { sessionID, countdownSeconds })
+
+      // Show toast notification
+      try {
+        await ctx.client.tui.showToast({
+          body: {
+            title: "Auto-Continuing",
+            message: `Continuing in ${countdownSeconds} seconds...`,
+            variant: "info",
+            duration: toastDurationMs,
+          },
         })
+      } catch {
+        // Ignore toast errors
       }
-    }, countdownSeconds * 1000)
-
-    pendingCountdowns.set(sessionID, timeout)
-    log.debug("Countdown timer scheduled", { sessionID, countdownSeconds })
-
-    // Show toast notification
-    try {
-      await ctx.client.tui.showToast({
-        body: {
-          title: "Auto-Continuing",
-          message: `Continuing in ${countdownSeconds} seconds...`,
-          variant: "info",
-          duration: toastDurationMs,
-        },
-      })
-    } catch {
-      // Ignore toast errors
     }
   }
 
   const handleSessionIdle = async (sessionID: string): Promise<void> => {
     // Check if session is recovering
-    if (recoveringSessions.has(sessionID)) {
+    if (stateManager.isRecovering(sessionID)) {
       return
     }
 
     // Check error cooldown
-    const lastError = errorCooldowns.get(sessionID) ?? 0
-    if (Date.now() - lastError < errorCooldownMs) {
+    if (stateManager.isInCooldown(sessionID)) {
       return
     }
 
@@ -593,15 +911,11 @@ INSTRUCTIONS:
   }
 
   const handleSessionError = async (sessionID: string, event?: LoopEvent): Promise<void> => {
-    // Clear any pending countdown
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
-    }
+    // Clear any pending countdown via state manager
+    stateManager.clearCountdown(sessionID)
 
     // Set error cooldown
-    errorCooldowns.set(sessionID, Date.now())
+    stateManager.startCooldown(sessionID)
 
     // Check for interruption
     const error = event?.properties?.error
@@ -646,37 +960,20 @@ INSTRUCTIONS:
     if (messageError) {
       const { isInterruption } = checkInterruption(messageError)
       if (isInterruption) {
-        cancelCountdownAtomic(sessionID, "message_error_interruption")
+        stateManager.cancelCountdown(sessionID, "message_error_interruption")
         log.debug("Message interruption detected", { sessionID })
         return // Exit early on interruption
       }
     }
 
-    // Deduplication: Check message ID and timestamp
-    if (messageID) {
-      const lastProcessed = lastProcessedMessageID.get(sessionID)
-      const lastTimestamp = messageTimestamps.get(sessionID) ?? 0
+    // Deduplication: Check message ID and timestamp via state manager
+    if (messageID && messageTimestamp) {
+      const isNewMessage = stateManager.trackMessage(sessionID, messageID, messageTimestamp)
       
-      // Skip if same message ID or if timestamp is older/same as last processed
-      if (lastProcessed === messageID) {
-        log.debug("Skipping duplicate message", { sessionID, messageID })
+      if (!isNewMessage) {
+        log.debug("Skipping duplicate or out-of-order message", { sessionID, messageID })
         return
       }
-      
-      // Additional timestamp check for race condition prevention
-      if (messageTimestamp <= lastTimestamp && lastProcessed) {
-        log.debug("Skipping out-of-order message", { 
-          sessionID, 
-          messageID, 
-          messageTimestamp, 
-          lastTimestamp 
-        })
-        return
-      }
-      
-      // Update tracking atomically
-      lastProcessedMessageID.set(sessionID, messageID)
-      messageTimestamps.set(sessionID, messageTimestamp)
     }
 
     // Handle user messages (not summaries)
@@ -685,8 +982,8 @@ INSTRUCTIONS:
       const isCancellation = messageContent && checkMessageCancellation(messageContent)
       
       if (isCancellation) {
-        // Explicit cancellation: cancel countdown and set cooldown atomically
-        const wasCancelled = cancelCountdownAtomic(sessionID, "user_cancellation_message")
+        // Explicit cancellation: cancel countdown and set cooldown
+        const wasCancelled = stateManager.cancelCountdown(sessionID, "user_cancellation_message")
         
         log.debug("User cancellation detected in message", {
           sessionID,
@@ -708,19 +1005,18 @@ INSTRUCTIONS:
           // Ignore toast errors
         }
       } else {
-        // Non-cancellation user message: cancel any pending countdown but clear cancellation state
-        // This allows future continuations after user interacts
-        const existingTimeout = pendingCountdowns.get(sessionID)
-        if (existingTimeout) {
-          clearTimeout(existingTimeout)
-          pendingCountdowns.delete(sessionID)
-          log.debug("New user message cancelled pending countdown", { sessionID, messageID })
-        }
+        // Non-cancellation user message: clear any pending countdown via state manager
+        stateManager.clearCountdown(sessionID)
         
         // Clear previous error cooldown and cancellation state on new user input
         // This resets the session to a clean state for future continuations
-        errorCooldowns.delete(sessionID)
-        clearCancellationState(sessionID)
+        stateManager.clearCooldown(sessionID)
+        stateManager.resetToIdle(sessionID)
+        
+        log.debug("New user message cancelled pending countdown and cleared state", {
+          sessionID,
+          messageID,
+        })
       }
     }
 
@@ -736,55 +1032,41 @@ INSTRUCTIONS:
           agent: messageAgent,
           model: messageModel,
         })
-        updateSessionAgentModel(sessionID, messageAgent, messageModel)
+        stateManager.setAgentModel(sessionID, { agent: messageAgent, model: messageModel })
       }
     }
   }
 
   const handleSessionDeleted = async (sessionID: string): Promise<void> => {
-    // Cleanup session state
-    recoveringSessions.delete(sessionID)
-    errorCooldowns.delete(sessionID)
-    sessionAgentModel.delete(sessionID)
-    lastProcessedMessageID.delete(sessionID)
-    pendingCancellations.delete(sessionID)
-    messageTimestamps.delete(sessionID)
-
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
-    }
+    // Cleanup session state via state manager
+    stateManager.deleteSession(sessionID)
+    log.debug("Session state cleaned up", { sessionID })
   }
 
   const handleSessionActive = async (sessionID: string): Promise<void> => {
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
+    const wasScheduled = stateManager.getState(sessionID) === "scheduled"
+    stateManager.clearCountdown(sessionID)
+    
+    if (wasScheduled) {
       log.debug("Session became active, cancelled pending countdown", { sessionID })
     }
   }
 
   const handleSessionBusy = async (sessionID: string): Promise<void> => {
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
+    const wasScheduled = stateManager.getState(sessionID) === "scheduled"
+    stateManager.clearCountdown(sessionID)
+    
+    if (wasScheduled) {
       log.debug("Session became busy, cancelled pending countdown", { sessionID })
     }
   }
 
   const handleSessionCancelled = async (sessionID: string): Promise<void> => {
     // Clear any pending countdown
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
-    }
+    stateManager.clearCountdown(sessionID)
 
     // Set error cooldown to prevent immediate continuation
-    errorCooldowns.set(sessionID, Date.now())
+    stateManager.startCooldown(sessionID)
 
     log.debug("Session cancellation detected, stopping continuation", { sessionID })
 
@@ -810,13 +1092,12 @@ INSTRUCTIONS:
       "type" in status &&
       (status as { type?: string }).type === "idle"
     ) {
-      const lastError = errorCooldowns.get(sessionID) ?? 0
-      const recentError = Date.now() - lastError < 5000
+      // Check if in cooldown
+      const inCooldown = stateManager.isInCooldown(sessionID)
 
-      if (recentError) {
+      if (inCooldown) {
         log.debug("Session returned to idle after recent error, skipping continuation", {
           sessionID,
-          timeSinceError: Date.now() - lastError,
         })
         return
       }
@@ -865,37 +1146,22 @@ INSTRUCTIONS:
   }
 
   const markRecovering = (sessionID: string): void => {
-    recoveringSessions.add(sessionID)
+    stateManager.setRecovering(sessionID, true)
   }
 
   const markRecoveryComplete = (sessionID: string): void => {
-    recoveringSessions.delete(sessionID)
+    stateManager.setRecovering(sessionID, false)
   }
 
   const cancel = (sessionID: string): void => {
-    const existingTimeout = pendingCountdowns.get(sessionID)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-      pendingCountdowns.delete(sessionID)
-    }
-
-    errorCooldowns.delete(sessionID)
-    recoveringSessions.delete(sessionID)
-    pendingCancellations.delete(sessionID)
-    messageTimestamps.delete(sessionID)
+    // Cancel countdown and set cooldown
+    stateManager.cancelCountdown(sessionID, "cancel_method_called")
+    // Also clear recovering state
+    stateManager.setRecovering(sessionID, false)
   }
 
   const cleanup = async (): Promise<void> => {
-    for (const timeout of pendingCountdowns.values()) {
-      clearTimeout(timeout)
-    }
-    pendingCountdowns.clear()
-    recoveringSessions.clear()
-    errorCooldowns.clear()
-    sessionAgentModel.clear()
-    lastProcessedMessageID.clear()
-    pendingCancellations.clear()
-    messageTimestamps.clear()
+    stateManager.cleanup()
     log.debug("Task continuation cleanup completed")
   }
 
@@ -907,4 +1173,3 @@ INSTRUCTIONS:
     cleanup,
   }
 }
-

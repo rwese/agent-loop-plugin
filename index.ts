@@ -13,6 +13,9 @@ import { getEffectiveConfig } from "./config.js";
 import { createGoalManagement, createGoalTools } from "./packages/goals/index.js";
 import { createTaskContinuation } from "./packages/continuation/index.js";
 
+// Re-export session context utilities for plugin authors
+export { initSessionContext, sessionContext } from "./src/session-context.js";
+
 /**
  * Main agent-loop plugin
  * Combines goal management and task continuation
