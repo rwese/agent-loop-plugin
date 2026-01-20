@@ -1,40 +1,49 @@
-# Agent Instructions
+# Agent Loop Plugin - Development Guide
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This is a minimal OpenCode plugin for task continuation.
 
-## Quick Reference
+## Quick Start
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
+# Install dependencies
+npm install
+
+# Run tests
+npm test
+
+# Type check
+npm run typecheck
+
+# Build distribution
+npm run build
 ```
 
-## Landing the Plane (Session Completion)
+## Release Process
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+```bash
+# Patch release (bug fixes)
+npm run version:patch
 
-**MANDATORY WORKFLOW:**
+# Minor release (new features)
+npm run version:minor
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+# Major release (breaking changes)
+npm run version:major
+```
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+## Plugin Overview
 
+- **Purpose**: Automatically continues sessions when incomplete tasks remain
+- **Main file**: `src/plugin.ts`
+- **Continuation logic**: `packages/continuation/index.ts`
+- **Tests**: `__tests__/` (38 tests, all passing)
+
+## Configuration
+
+The plugin reads config from `~/.local/share/opencode/agent-loop-plugin.jsonc`
+
+Options:
+
+- `countdownSeconds`: Seconds before auto-continuation (default: 2)
+- `errorCooldownMs`: Cooldown after errors (default: 3000)
+- `debug`: Enable debug logging (default: true)
